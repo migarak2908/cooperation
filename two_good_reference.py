@@ -36,6 +36,7 @@ MIN_SHARE = 1e-4                     # groups below this share are removed
 LAM_MIN = 1e-6                       # split only if the largest curvature eigenvalue is above this
 SPLIT_COOLDOWN = 100                 # a group can't split again within this many steps of a split
 ANNEAL_FRAC, ANNEAL_TO = 0.2, 1e-3   # last 20% of steps: dt shrinks to dt * 1e-3
+CONVERGENCE_TOL = 1e-4               # converged: gradients and payoff gaps below this (= STILL / TIME_STEP)
 
 # labelling (reference scheme)
 LABEL_SHARE_MIN = 0.01               # a group counts only if its (rounded) share is above this
@@ -131,6 +132,47 @@ def k_group_run(p, q, b1, b2, x0, time_step=TIME_STEP, steps=STEPS, K=K, still=S
     age = jnp.full(K, split_cooldown)
     (xs, fs, age, overflow), _ = jax.lax.scan(step, (xs, fs, age, False), jnp.arange(steps))
     return xs, fs, overflow
+
+
+def convergence(p, q, b1, b2, xs, fs, min_share=MIN_SHARE, lam_min=LAM_MIN, tol=None):
+    # How settled one final state is (checked once, at the end of a run):
+    # grad: largest gradient over alive groups and goods, ignoring a good pinned at a wall
+    #       with the gradient pushing outwards (that counts as settled)
+    # gap:  largest |payoff - average payoff| over alive groups (shares still changing if > 0)
+    # pending: an alive group has stopped (gradient below tol) but would still branch
+    #          (positive curvature, goods at a wall removed)
+    tol = CONVERGENCE_TOL if tol is None else tol
+    payoff = lambda y, xs, fs: jnp.sum(fs * P(y, xs, b1, b2, p, q))
+    alive = fs > min_share
+    grads = jax.vmap(jax.grad(payoff), in_axes=(0, None, None))(xs, xs, fs)          # (K, 2)
+    at_min, at_max = xs <= x_min, xs >= x_max
+    pushing_out = (at_min & (grads <= 0)) | (at_max & (grads >= 0))
+    group_grad = jnp.max(jnp.where(~pushing_out, jnp.abs(grads), 0.0), axis=-1)       # (K,)
+    grad = jnp.max(jnp.where(alive, group_grad, 0.0))
+
+    payoffs = jax.vmap(payoff, in_axes=(0, None, None))(xs, xs, fs)
+    avg = jnp.sum(fs * payoffs) / jnp.sum(fs)
+    gap = jnp.max(jnp.where(alive, jnp.abs(payoffs - avg), 0.0))
+
+    free_goods = (x_min < xs) & (xs < x_max)
+    H = jax.vmap(jax.hessian(payoff), in_axes=(0, None, None))(xs, xs, fs)
+    H = H * free_goods[:, :, None] * free_goods[:, None, :]
+    lam, _ = jax.vmap(top_eigen)(H)
+    pending = jnp.any(alive & (group_grad < tol) & (lam > lam_min))
+    return grad, gap, pending
+
+
+def check_convergence(xs, fs, n, tol=CONVERGENCE_TOL):
+    # runs convergence() on every final state; returns (start, p, q, b2', b1') arrays
+    b = np.linspace(0, 4, n)
+    I, Pg, Qg, Y, X = np.meshgrid(np.arange(len(STARTS)), P_VALUES, Q_VALUES, b, b, indexing="ij")
+    k = xs.shape[-2]
+    grad, gap, pending = jax.jit(jax.vmap(convergence))(
+        Pg.ravel(), Qg.ravel(), X.ravel(), Y.ravel(), xs.reshape(-1, k, 2), fs.reshape(-1, k))
+    shape = I.shape
+    grad, gap, pending = (np.asarray(a).reshape(shape) for a in (grad, gap, pending))
+    converged = (grad < tol) & (gap < tol) & ~pending
+    return converged, grad, gap, pending
 
 
 def simulate(n, settings):
@@ -321,6 +363,18 @@ if __name__ == "__main__":
     print(f"runs where a split was wanted but no slot was free (K = {args.K} too small): "
           f"{int(overflow.sum())} of {overflow.size}")
     # xs: (start, p, q, b2', b1', K, 2), fs: (start, p, q, b2', b1', K)
+
+    # convergence of each run's final state
+    converged, grad, gap, pending = check_convergence(xs, fs, args.n)
+    point_ok = converged.all(axis=0)                                   # (p, q, b2', b1'): all starts settled
+    print(f"\nconvergence (tolerance {CONVERGENCE_TOL:g}): {int((~converged).sum())} of {converged.size} runs "
+          f"not converged ({int(pending.sum())} with a split still pending, "
+          f"{int(((grad >= CONVERGENCE_TOL) & ~pending).sum())} traits still moving, "
+          f"{int(((gap >= CONVERGENCE_TOL) & ~pending).sum())} shares still changing)")
+    for i, p in enumerate(P_VALUES):
+        for j, q in enumerate(Q_VALUES):
+            print(f"  p = {p:g}, q = {q:g}: {int((~converged[:, i, j]).sum())} runs not converged, "
+                  f"{int((~point_ok[i, j]).sum())} grid points with at least one such run")
 
     labels_raw = grid_labels(outcome_bits(xs, fs))                    # (p, q, b2', b1')
     labels, rare, replaced = replace_rare(labels_raw, b, b, RARE_FRAC)
