@@ -80,6 +80,10 @@ only means editing `P`. In the two-good version a group splits when the curvatur
 matrix (restricted to goods that are not at a wall) has a positive eigenvalue, along
 the corresponding eigenvector; traits are kept in `[x_min, x_max]` with
 `x_min = 1e-6` because the power mean's gradient is infinite at 0 when `p < 1`.
+With `p < 1` the push on a good near 0 doesn't fade, so fixed time steps can cycle
+around a corner instead of reaching it; the time step therefore shrinks smoothly over
+the last 20% of a run (`anneal_frac`, `anneal_to`), and outcomes are classified with
+small tolerances (`wall_tol`, `same_tol`) rather than exact equality.
 
 Each run is classified by its final state (C, D, ESS, or C and D — per good in the
 two-good version); each grid point takes the most common outcome over starts, and is
