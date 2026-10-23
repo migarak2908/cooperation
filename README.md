@@ -62,6 +62,8 @@ average investment.
 | `single_good_analytic_phase.py` | analytic phase diagram and average trait for one good |
 | `single_good_integration_phase.py` | vectorised simulation of the two-group dynamics over a `(b1', b2')` grid and several starting values |
 | `two_good_integration_phase.py` | the same for two goods, over `(p, q, b1', b2')` |
+| `two_good_simulate.py` | two goods with repeated branching, each run continued until it converges; saves every final state to `two_good_results_<tag>.npz` |
+| `two_good_analysis.py` | labels and plots a results file; labelling schemes (`cc_dc_dd`, `cc_dc_dd_division`, `mean_investment`) are listed in `SCHEMES` |
 
 ### How the simulations work
 
@@ -90,18 +92,55 @@ two-good version); each grid point takes the most common outcome over starts, an
 labelled **C or D** when some starts end C and others D. Starts include both walls
 (and all four corners for two goods) so bistable points are always detected.
 
+### Two goods with repeated branching: simulate, then analyse
+
+`two_good_simulate.py` lets a population split more than once. Each run has a number of group
+slots (2, moving up to 4 and then 8 only when a split needs room) and is advanced 1000 steps at a
+time. After each chunk:
+
+- a group that has stopped on a **saddle** (the selection-gradient Jacobian has a positive
+  eigenvalue) is pushed off it along the unstable direction, so symmetric starts don't branch
+  where they shouldn't
+- a group that has stopped at an attracting point where the mutant payoff curves upwards
+  **splits** along that direction, unless it split nearby just before
+- a run whose gradients and payoff differences are all below `TOL` has **converged** and stops
+- a run that is **cycling** (large gradient, little net movement) has its time step halved; it
+  grows back once the run moves normally
+
+Runs stop at `MAX_STEPS` if they never converge. The final traits and shares of every run are
+saved, with the settings needed to read them (`x_max`, p and q values, b grid, starts), in
+`two_good_results_<tag>.npz`; if that file exists the simulation is skipped.
+
+`two_good_analysis.py` turns a results file into plots. A **scheme** defines what cooperation means:
+
+| Scheme | Kind | What it gives |
+|---|---|---|
+| `cc_dc_dd` | categories | a good counts as invested above `x_max / 2`; each group is CC (both goods), DC (one) or DD (neither); a run's outcome is its distinct group types, e.g. `CC and DD`, and a grid point's label is the distinct outcomes over its starts, e.g. `CC \|or\| DD` |
+| `cc_dc_dd_division` | categories | the same, but DC groups investing in different goods give `DC and DC'` (division of labour) |
+| `mean_investment` | scale | share-weighted mean investment / `x_max`, averaged over starts |
+
+Category schemes produce two figures: the labels as they came out, and a filtered version where
+labels on fewer than 0.3% of all grid points are replaced by their nearest neighbour. Every
+figure has a panel per `(p, q)` (p across, q down) and the line `b2' = b1'/2`. To add a scheme,
+write a function `(xs, fs, r)` returning a name or number per run and add it to `SCHEMES`.
+
 ## Running
 
-Requires `jax` and `matplotlib`.
+Requires `jax`, `numpy`, `scipy` and `matplotlib` (`two_good_analysis.py` doesn't need `jax`).
 
 ```
 python single_good_analytic_phase.py
 python single_good_integration_phase.py
 python two_good_integration_phase.py
+python two_good_simulate.py --n 30
+python two_good_analysis.py --scheme cc_dc_dd mean_investment
 ```
 
+`two_good_analysis.py` uses the newest results file unless one is given, and needs no JAX,
+so a results file from Colab can be analysed locally.
+
 Grid sizes, starts, step size and number of steps are set at the top of each
-`__main__` block.
+`__main__` block; for `two_good_simulate.py` they are in the settings at the top of the file.
 
 ### On Google Colab (GPU)
 
