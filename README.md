@@ -41,11 +41,10 @@ spread evenly over `[0, x_max]`, the probability of ending up cooperating is
 
 ### Two goods
 
-Each individual has a trait per good, `y = (y1, y2)`. The goods are combined with a
-power (generalised) mean `M_p(a, b) = ((a^p + b^p) / 2)^(1/p)`:
+Each individual invests in two goods: `y = (y1, y2)` for the focal individual, `x = (x1, x2)` for its partner. Each good is pooled across the pair, and the two pooled amounts are combined with a power (generalised) mean, `M_p(a, b) = ((a^p + b^p) / 2)^(1/p)`:
 
 ```
-P(y, x) = b1' M_p(x + y) - b2' M_p(x + y)^2 - M_q(y) + M_q(y)^2
+P(y, x) = b1' M_p(x1 + y1, x2 + y2) - b2' M_p(x1 + y1, x2 + y2)^2 - M_q(y1, y2) + M_q(y1, y2)^2
 ```
 
 `p` sets how the goods combine in the benefit and `q` how the investments combine in
