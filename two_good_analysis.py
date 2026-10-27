@@ -20,6 +20,7 @@ import numpy as np
 LABEL_SHARE_MIN = 0.01               # a group counts if its (rounded) share is above this
 RARE_FRAC = 0.003                    # labels on fewer than 0.3% of all grid points are rare
 OTHER_COLOUR = "#9e9e9e"
+SHADE_VALID_BAND = False             # True: grey out grid cells outside the band between the two lines
 
 
 # ---------- loading ----------
@@ -245,8 +246,34 @@ def panels(r, title):
     return fig, axes, each()
 
 
-def draw_line(ax, b):
-    ax.plot(b, b / 2, color="black", linewidth=1, linestyle="--")    # b2' = b1'/2
+def band_lines(b, x_max):
+    # one-good reference lines, from B(z) = b1' z - b2' z^2 and x* = (b1' - 1) / (4 b2' - 2):
+    #   upper: benefit still increasing at the largest pair total 2 x_max (valid below it)
+    #   lower: x* inside [0, x_max] (valid above it)
+    # with x_max = 0.5 both are b2' = b1'/2
+    return b / (4 * x_max), (b - 1 + 2 * x_max) / (4 * x_max)
+
+
+def line_handles():
+    from matplotlib.lines import Line2D
+    return [Line2D([], [], color="black", linewidth=1, linestyle="--", label="benefit increasing up to cap (below)"),
+            Line2D([], [], color="black", linewidth=1, linestyle=":", label="x* inside [0, x_max] (above)")]
+
+
+def draw_lines(ax, b, x_max):
+    # the two reference lines, clipped to the plotted range; with SHADE_VALID_BAND, a grey overlay
+    # on the cells outside the band (above the lower line and below the upper one)
+    upper, lower = band_lines(b, x_max)
+    extent = [b[0], b[-1], b[0], b[-1]]
+    if SHADE_VALID_BAND:
+        B1, B2 = np.meshgrid(b, b)                                   # cell centres, (b2', b1')
+        upper_grid, lower_grid = band_lines(B1, x_max)
+        outside = ~((B2 >= lower_grid) & (B2 <= upper_grid))
+        overlay = np.zeros(B1.shape + (4,))
+        overlay[outside] = (0.5, 0.5, 0.5, 0.4)
+        ax.imshow(overlay, origin="lower", extent=extent, aspect="auto", interpolation="nearest")
+    ax.plot(b, upper, color="black", linewidth=1, linestyle="--")
+    ax.plot(b, lower, color="black", linewidth=1, linestyle=":")
     ax.set_xlim(b[0], b[-1]); ax.set_ylim(b[0], b[-1])
 
 
@@ -258,7 +285,6 @@ def save(fig, filename):
 def plot_categories(labels, r, scheme, title, filename):
     from matplotlib.colors import ListedColormap
     from matplotlib.patches import Patch
-    from matplotlib.lines import Line2D
     b = r["b"]
     names, colours = label_colours(labels, scheme)
     index = {l: k for k, l in enumerate(names)}
@@ -267,9 +293,8 @@ def plot_categories(labels, r, scheme, title, filename):
     for ax, i, j in each:
         ax.imshow(codes[i, j], origin="lower", extent=[b[0], b[-1], b[0], b[-1]], aspect="auto",
                   interpolation="nearest", cmap=ListedColormap(colours), vmin=-0.5, vmax=len(names) - 0.5)
-        draw_line(ax, b)
-    handles = [Patch(color=c, label=l) for l, c in zip(names, colours)]
-    handles.append(Line2D([], [], color="black", linewidth=1, linestyle="--", label="b2' = b1'/2"))
+        draw_lines(ax, b, r["x_max"])
+    handles = [Patch(color=c, label=l) for l, c in zip(names, colours)] + line_handles()
     fig.legend(handles=handles, loc="center left", fontsize=8)
     fig.subplots_adjust(left=0.27, wspace=0.25, hspace=0.3)
     save(fig, filename)
@@ -281,8 +306,9 @@ def plot_scale(values, r, scheme, title, filename):
     for ax, i, j in each:
         im = ax.imshow(values[i, j], origin="lower", extent=[b[0], b[-1], b[0], b[-1]], aspect="auto",
                        interpolation="nearest", vmin=scheme.get("vmin"), vmax=scheme.get("vmax"))
-        draw_line(ax, b)
+        draw_lines(ax, b, r["x_max"])
     fig.colorbar(im, ax=axes, label=scheme.get("label", ""))
+    fig.legend(handles=line_handles(), loc="upper left", fontsize=8)
     save(fig, filename)
 
 

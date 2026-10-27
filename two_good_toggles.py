@@ -444,7 +444,6 @@ def save_side_by_side(left, right, b, left_title, right_title, filename):
     # two 3 x 3 panels (columns p, rows q) with one shared legend, so the colours match
     from matplotlib.colors import ListedColormap
     from matplotlib.patches import Patch
-    from matplotlib.lines import Line2D
     names, colours = analysis.label_colours(np.concatenate([left.ravel(), right.ravel()]), SCHEME)
     index = {l: k for k, l in enumerate(names)}
     fig = plt.figure(figsize=(28, 11))
@@ -456,13 +455,12 @@ def save_side_by_side(left, right, b, left_title, right_title, filename):
                 ax = axes[j, i]
                 ax.imshow(codes[i, j], origin="lower", extent=[b[0], b[-1], b[0], b[-1]], aspect="auto",
                           interpolation="nearest", cmap=ListedColormap(colours), vmin=-0.5, vmax=len(names) - 0.5)
-                analysis.draw_line(ax, b)
+                analysis.draw_lines(ax, b, x_max)
                 ax.set_title(f"Phase diagram p = {p:g} q = {q:g}", fontsize=10)
                 ax.set_xlabel("b1'"); ax.set_ylabel("b2'")
         sub.suptitle(title, fontsize=11)
         sub.subplots_adjust(left=0.25 if k == 0 else 0.08, wspace=0.25, hspace=0.3)     # room for the legend
-    handles = [Patch(color=c, label=l) for l, c in zip(names, colours)]
-    handles.append(Line2D([], [], color="black", linewidth=1, linestyle="--", label="b2' = b1'/2"))
+    handles = [Patch(color=c, label=l) for l, c in zip(names, colours)] + analysis.line_handles()
     fig.legend(handles=handles, loc="center left", fontsize=8)
     fig.savefig(filename, dpi=120)
     plt.close(fig)
