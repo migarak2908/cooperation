@@ -14,6 +14,8 @@
 #
 # Usage:  python two_good_pq_analysis.py                       (newest results file, scheme cc_dc_dd_division)
 #         python two_good_pq_analysis.py RESULTS.npz --scheme cc_dc_dd_division mean_investment
+#         python two_good_pq_analysis.py --scheme division_of_labour_index
+#         python two_good_pq_analysis.py --cut-p 0.5                   (each group's lean along q, at p = 0.5)
 #         in Colab: %run two_good_pq_analysis.py --scheme cc_dc_dd_division
 
 import argparse
@@ -176,6 +178,39 @@ def mean_investment(xs, fs, r):
     return np.sum(fs[..., None] * xs, axis=(-2, -1)) / (2 * x_star)
 
 
+# ---------- scheme: division-of-labour score (a sliding scale) ----------
+# With group shares f_i, d_i = x1_i - x2_i and t_i = x1_i + x2_i (counted groups only):
+#   individual = sum f_i |d_i| / sum f_i t_i      how lopsided individuals are
+#   population = |sum f_i d_i| / sum f_i t_i      how lopsided the population is as a whole
+#   score = individual - population               0 to 1; 1 = groups specialise in opposite goods
+
+def division_of_labour_index(xs, fs, r):
+    xs, fs, counted = counted_groups(xs, fs, r)
+    f = np.where(counted, fs, 0.0)
+    d, t = xs[..., 0] - xs[..., 1], xs[..., 0] + xs[..., 1]
+    total = np.sum(f * t, axis=-1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        individual = np.sum(f * np.abs(d), axis=-1) / total
+        population = np.abs(np.sum(f * d, axis=-1)) / total
+    return np.where(total < 1e-9, 0.0, individual - population)      # nobody invests: 0
+
+
+def check_division_of_labour_index(r):
+    def score(groups, shares):
+        xs = np.zeros((4, 2)); fs = np.zeros(4)
+        xs[:len(groups)], fs[:len(shares)] = groups, shares
+        return float(division_of_labour_index(xs, fs, r))
+    cases = [
+        ("one group at (1, 1)",                              score([(1, 1)], [1.0]),                                  0.0),
+        ("one group at (1, 0)",                              score([(1, 0)], [1.0]),                                  0.0),
+        ("groups at (1, 0) and (0, 1), shares 0.5 each",     score([(1, 0), (0, 1)], [0.5, 0.5]),                     1.0),
+        ("(1, 0), (0, 1), (0.5, 0.5), shares 0.4, 0.4, 0.2", score([(1, 0), (0, 1), (0.5, 0.5)], [0.4, 0.4, 0.2]),    0.8),
+    ]
+    for name, got, expected in cases:
+        print(f"  {'ok' if abs(got - expected) < 1e-9 else 'FAILED':6s} {name:50s} -> {got:g} (expected {expected:g})")
+        assert abs(got - expected) < 1e-9
+
+
 # ---------- schemes ----------
 # kind: "categories" or "scale"; for categories, optionally colours (fixed legend), check (run
 # before labelling) and compare (run on the unfiltered grid labels)
@@ -187,6 +222,8 @@ SCHEMES = {
                               check=check_cc_dc_dd, compare=compare_prediction_division),
     "mean_investment":   dict(kind="scale", outcome=mean_investment, label="mean investment / x*",
                               vmin=0, vmax=2),
+    "division_of_labour_index": dict(kind="scale", outcome=division_of_labour_index, check=check_division_of_labour_index,
+                                     label="division-of-labour score (1 = clean division of labour)", vmin=0, vmax=1),
 }
 
 
@@ -322,6 +359,52 @@ def print_counts(labels, r, scheme, title):
                 print(f"  {c:5d}  {v}" + ("" if v in names else "   <- other (grey)"))
 
 
+# ---------- cut at one p: each group's lean along q ----------
+
+def plot_cut(r, p_value):
+    # the grid column nearest p_value; per (b, beta) panel, every counted group of every start as a dot
+    # at (q, lean) with lean = d / t from -1 (only good 2) to +1 (only good 1), area ~ share;
+    # groups investing less than INVESTED_MIN in total sit at 0, hollow
+    import matplotlib.pyplot as plt
+    k = int(np.argmin(np.abs(r["p_axis"] - p_value)))
+    p, q_axis = float(r["p_axis"][k]), r["q_axis"]
+    xs, fs, counted = counted_groups(r["xs"][:, :, :, :, k], r["fs"][:, :, :, :, k], r)   # (start, b, beta, q, slot, ...)
+    d, t = xs[..., 0] - xs[..., 1], xs[..., 0] + xs[..., 1]
+    invests = t >= INVESTED_MIN
+    lean = np.where(invests, d / np.where(invests, t, 1.0), 0.0)
+    step = q_axis[1] - q_axis[0]
+    colours = plt.cm.tab10(np.arange(len(r["starts"])))
+
+    b_values, beta_values = r["b_values"], r["beta_values"]
+    fig, axes = plt.subplots(len(b_values), len(beta_values), sharex=True, sharey=True,
+                             figsize=(4.5 * len(beta_values) + 2, 4 * len(b_values) + 1.5), squeeze=False)
+    for i, b in enumerate(b_values):
+        for j, beta in enumerate(beta_values):
+            ax = axes[i, j]
+            for s, start in enumerate(r["starts"]):
+                offset = (s - (len(r["starts"]) - 1) / 2) * step / 4      # so the starts don't hide each other
+                Q = np.broadcast_to(q_axis[:, None], lean.shape[3:]) + offset
+                for filled in [True, False]:
+                    use = counted[s, i, j] & (invests[s, i, j] == filled)
+                    ax.scatter(Q[use], lean[s, i, j][use], s=200 * fs[s, i, j][use],
+                               facecolors=colours[s] if filled else "none", edgecolors=colours[s], linewidths=0.8,
+                               label=f"start ({start[0]:g}, {start[1]:g})" if filled and i == j == 0 else None)
+            ax.axvline(p, color="black", linewidth=1, linestyle="--")
+            ax.axvline((p + 1) / 2, color="black", linewidth=1, linestyle=":")
+            ax.set_xlim(q_axis[0] - step, q_axis[-1] + step); ax.set_ylim(-1.1, 1.1)
+            ax.set_title(f"b' = {b:g}, beta' = {beta:g}, p = {p:.3g}", fontsize=10)
+            ax.set_xlabel("q"); ax.set_ylabel("lean (x1 - x2) / (x1 + x2)")
+    from matplotlib.lines import Line2D
+    handles = axes[0, 0].get_legend_handles_labels()[0] + [
+        Line2D([], [], color="black", linewidth=1, linestyle="--", label="q = p"),
+        Line2D([], [], color="black", linewidth=1, linestyle=":", label="q = (p + 1)/2"),
+        Line2D([], [], marker="o", color="grey", markerfacecolor="none", linestyle="", label=f"invests < {INVESTED_MIN:g}")]
+    fig.legend(handles=handles, loc="lower center", ncol=len(handles), fontsize=8)
+    fig.suptitle(f"groups at p = {p:.3g} (nearest to {p_value:g}), dot area ~ share - {r['tag']}")
+    fig.subplots_adjust(bottom=0.2, wspace=0.25, hspace=0.3)
+    save(fig, f"cut_p{p_value:g}_{r['tag']}.png")
+
+
 # ---------- running a scheme ----------
 
 def analyse(r, name):
@@ -329,12 +412,12 @@ def analyse(r, name):
     values = scheme["outcome"](r["xs"], r["fs"], r)            # (start, b, beta, q, p)
     base = f"{name}_{r['tag']}"
 
+    if "check" in scheme:
+        print(f"{name} checks:"); scheme["check"](r)
     if scheme["kind"] == "scale":
         plot_scale(values.mean(axis=0), r, scheme, f"{name}, averaged over starts - {r['tag']}", f"{base}.png")
         return
 
-    if "check" in scheme:
-        print(f"{name} checks:"); scheme["check"](r)
     labels_raw = grid_labels(values)                           # (b, beta, q, p)
     labels, rare, replaced = replace_rare(labels_raw, r["p_axis"], r["q_axis"])
     print(f"\nrare labels (fewer than {RARE_FRAC:.1%} of {labels_raw.size} points), replaced by their nearest neighbour:")
@@ -359,11 +442,15 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("results", nargs="?", help="results file (default: newest two_good_pq_results_*.npz)")
-    parser.add_argument("--scheme", nargs="+", default=["cc_dc_dd_division"], choices=list(SCHEMES),
-                        help="one or more labelling schemes")
+    parser.add_argument("--scheme", nargs="+", choices=list(SCHEMES),
+                        help="one or more labelling schemes (default: cc_dc_dd_division, or none with --cut-p)")
+    parser.add_argument("--cut-p", type=float, help="also plot each group's lean along q at the p nearest this")
     args = parser.parse_args()
+    schemes = args.scheme or ([] if args.cut_p is not None else ["cc_dc_dd_division"])
 
     r = load(args.results)
-    for name in args.scheme:
+    if args.cut_p is not None:
+        plot_cut(r, args.cut_p)
+    for name in schemes:
         print(f"\n---------- {name} ----------")
         analyse(r, name)
