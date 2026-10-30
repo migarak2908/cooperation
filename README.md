@@ -52,104 +52,56 @@ the cost: `p = 1` is a plain average, `p < 1` makes the goods complements, `p > 
 substitutes. With `p = q = 1` the model reduces exactly to the one-good model in the
 average investment.
 
-## Files
+The exponential model replaces the benefit and cost with saturating curves,
+`b (1 - exp(-M_p / beta)) - (1 - exp(-M_q))`; for `beta < 1` and `b > beta` theory predicts single
+specialists for `q < p`, division of labour for `p < q < (p + 1)/2`, and generalists for `q > (p + 1)/2`.
 
-| File | What it does |
+## Running
+
+**See [USAGE.md](USAGE.md) for what to run for each model, sweep and option, and what each gives.**
+In short:
+
+```
+python run_simulation.py --model quadratic --n 10       # saves results_<tag>.npz
+python run_analysis.py results_<tag>.npz                # labels it and saves the figures
+```
+
+## Layout
+
+| Path | What it holds |
 |---|---|
-| `single_good_single_pop.py` | one monomorphic population following the selection gradient |
-| `single_good_multiple_pop.py` | loop version: a population that can split into two groups, with share dynamics, merging and dropping of small groups |
-| `single_good_analytic_phase.py` | analytic phase diagram and average trait for one good |
-| `single_good_integration_phase.py` | vectorised simulation of the two-group dynamics over a `(b1', b2')` grid and several starting values |
-| `two_good_integration_phase.py` | the same for two goods, over `(p, q, b1', b2')` |
-| `two_good_simulate.py` | two goods with repeated branching, each run continued until it converges; saves every final state to `two_good_results_<tag>.npz` |
-| `two_good_analysis.py` | labels and plots a results file; labelling schemes (`cc_dc_dd`, `cc_dc_dd_division`, `mean_investment`) are listed in `SCHEMES` |
+| `run_simulation.py` | runs a model over a sweep and saves the final state of every run |
+| `run_analysis.py` | labels and plots a results file (no JAX needed) |
+| `coop/models.py` | payoff models (quadratic, exponential) and their options |
+| `coop/sweeps.py` | parameter sweeps: which parameters are panels and which form the grid |
+| `coop/engine.py` | the adaptive dynamics, for any model and sweep |
+| `coop/results.py` | saving and loading results files |
+| `coop/schemes.py` | labelling schemes: what counts as cooperation |
+| `coop/references.py` | theory: `x*`, reference lines, analytic predictions |
+| `coop/plots.py` | figures |
+| `single_good/` | small self-contained one-good scripts (analytic phase diagram and simulations) |
+| `archive/two_good_integration_phase.py` | an early two-good version with exactly two groups per run (kept for reference) |
 
-### How the simulations work
+### How the two-good simulation works
 
-`multiple_pop_run` simulates one population for one parameter point and one start,
-following the same steps as `multiple_pop`: gradients, trait update, payoffs, share
-update, then drop / merge / split checks. To make it fast:
-
-- there are always two groups; a single group is both groups at the same trait,
-  which behaves identically
-- the `if` checks are written as `jnp.where(condition, if_true, if_false)`
-- the time loop is `jax.lax.scan`, and `jax.vmap` runs every
-  (start, parameter) combination at once inside one `jax.jit`
-
-Gradients and curvature come from `jax.grad` / `jax.hessian`, so changing the model
-only means editing `P`. In the two-good version a group splits when the curvature
-matrix (restricted to goods that are not at a wall) has a positive eigenvalue, along
-the corresponding eigenvector; traits are kept in `[x_min, x_max]` with
-`x_min = 1e-6` because the power mean's gradient is infinite at 0 when `p < 1`.
-With `p < 1` the push on a good near 0 doesn't fade, so fixed time steps can cycle
-around a corner instead of reaching it; the time step therefore shrinks smoothly over
-the last 20% of a run (`anneal_frac`, `anneal_to`), and outcomes are classified with
-small tolerances (`wall_tol`, `same_tol`) rather than exact equality.
-
-Each run is classified by its final state (C, D, ESS, or C and D — per good in the
-two-good version); each grid point takes the most common outcome over starts, and is
-labelled **C or D** when some starts end C and others D. Starts include both walls
-(and all four corners for two goods) so bistable points are always detected.
-
-### Two goods with repeated branching: simulate, then analyse
-
-`two_good_simulate.py` lets a population split more than once. Each run has a number of group
-slots (2, moving up to 4 and then 8 only when a split needs room) and is advanced 1000 steps at a
-time. After each chunk:
+Each run (one parameter point and one start) has a number of group slots (2, moving up to 4 and then
+8 only when a split needs room) and is advanced 1000 steps at a time; every step updates the traits
+along the selection gradient and the shares by replicator dynamics, drops groups below a minimum
+share and merges groups that come within `1e-3`. After each chunk:
 
 - a group that has stopped on a **saddle** (the selection-gradient Jacobian has a positive
   eigenvalue) is pushed off it along the unstable direction, so symmetric starts don't branch
   where they shouldn't
 - a group that has stopped at an attracting point where the mutant payoff curves upwards
   **splits** along that direction, unless it split nearby just before
-- a run whose gradients and payoff differences are all below `TOL` has **converged** and stops
+- a run whose gradients and payoff differences are all below `tol` has **converged** and stops
 - a run that is **cycling** (large gradient, little net movement) has its time step halved; it
-  grows back once the run moves normally
+  grows back (up to `max_dt`) once the run moves normally
 
-Runs stop at `MAX_STEPS` if they never converge. The final traits and shares of every run are
-saved, with the settings needed to read them (`x_max`, p and q values, b grid, starts), in
-`two_good_results_<tag>.npz`; if that file exists the simulation is skipped.
-
-`two_good_analysis.py` turns a results file into plots. A **scheme** defines what cooperation means:
-
-| Scheme | Kind | What it gives |
-|---|---|---|
-| `cc_dc_dd` | categories | a good counts as invested above `x_max / 2`; each group is CC (both goods), DC (one) or DD (neither); a run's outcome is its distinct group types, e.g. `CC and DD`, and a grid point's label is the distinct outcomes over its starts, e.g. `CC \|or\| DD` |
-| `cc_dc_dd_division` | categories | the same, but DC groups investing in different goods give `DC and DC'` (division of labour) |
-| `mean_investment` | scale | share-weighted mean investment / `x_max`, averaged over starts |
-
-Category schemes produce two figures: the labels as they came out, and a filtered version where
-labels on fewer than 0.3% of all grid points are replaced by their nearest neighbour. Every
-figure has a panel per `(p, q)` (p across, q down) and the line `b2' = b1'/2`. To add a scheme,
-write a function `(xs, fs, r)` returning a name or number per run and add it to `SCHEMES`.
-
-## Running
-
-Requires `jax`, `numpy`, `scipy` and `matplotlib` (`two_good_analysis.py` doesn't need `jax`).
-
-```
-python single_good_analytic_phase.py
-python single_good_integration_phase.py
-python two_good_integration_phase.py
-python two_good_simulate.py --n 30
-python two_good_analysis.py --scheme cc_dc_dd mean_investment
-```
-
-`two_good_analysis.py` uses the newest results file unless one is given, and needs no JAX,
-so a results file from Colab can be analysed locally.
-
-Grid sizes, starts, step size and number of steps are set at the top of each
-`__main__` block; for `two_good_simulate.py` they are in the settings at the top of the file.
-
-### On Google Colab (GPU)
-
-1. Runtime → Change runtime type → T4 GPU
-2. Upload the script with the Files panel
-3. In a cell: `%run two_good_integration_phase.py` (`%run`, not `!python`, so the figures show)
-4. The first line printed should list a `CudaDevice`; if it shows `CpuDevice`, run
-   `!pip install -U "jax[cuda12]"`, restart the runtime and run again
-
-The first run includes about a minute of compilation.
+Gradients, Hessians and Jacobians come from JAX applied to the model's payoff, so a new model only
+needs its payoff function. Thousands of runs are advanced together with `jax.vmap` inside `jax.jit`.
+Traits are kept in `[x_min, x_max]` with `x_min > 0` because the power mean's gradient is infinite
+at 0 when `p < 1`.
 
 ## Checks and caveats
 
