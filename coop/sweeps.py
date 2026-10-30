@@ -4,7 +4,7 @@
 #
 # To add a sweep: add an entry to SWEEPS. Its four parameters must be the model's parameters.
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import numpy as np
 
 
@@ -47,7 +47,27 @@ SWEEPS = {
     "p_q":    Sweep("p_q", panels=(("b", [2.0]), ("beta", [0.5, 0.75, 0.9])),
                     grid=(("q", Axis(0.3, 1.5)), ("p", Axis(0.3, 1.5))), panel_rows="b",
                     settings=dict(x_min=1e-3)),
+    # quadratic model: (p, q) grid, a panel per (b1', b2'), to test the division-of-labour rule, which
+    # needs b1' > 1 and b2' above both 1 and b1'/2
+    "p_q_quadratic": Sweep("p_q_quadratic", panels=(("b1", [2.0]), ("b2", [1.2, 1.5, 2.0])),
+                           grid=(("q", Axis(0.3, 1.5)), ("p", Axis(0.3, 1.5))), panel_rows="b1",
+                           settings=dict(x_min=1e-3)),
 }
+
+
+def with_values(sweep, values):
+    # the sweep with new values for some of its panel parameters, e.g. {"b2": [0.6, 0.8]}
+    panels = tuple((name, values.pop(name, vs)) for name, vs in sweep.panels)
+    if values:
+        raise SystemExit(f"--values: {', '.join(values)} not a panel parameter of sweep {sweep.name!r} "
+                         f"(its panel parameters: {', '.join(name for name, _ in sweep.panels)})")
+    return replace(sweep, panels=panels)
+
+
+def changed_values(sweep):
+    # the panel parameters whose values differ from the sweep's defaults in SWEEPS, as "b2-0.6-0.8" for tags
+    default = dict(SWEEPS[sweep.name].panels)
+    return [name + "-" + "-".join(f"{v:g}" for v in vs) for name, vs in sweep.panels if list(vs) != list(default[name])]
 
 
 def layout(sweep, n, n_starts):

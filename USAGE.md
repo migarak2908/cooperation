@@ -32,6 +32,8 @@ Figures are saved as `.png` files in the folder, not shown in the notebook.
 | The same with the cost flat past its peak | `--model quadratic --flat-cost` | same | identical to the plain run while `x_max <= 0.5` (Mq never passes 1/2) |
 | Exponential phase diagrams: (b', beta') grid, a panel per (p, q) | `--model exp` | same | same, with the exponential reference lines |
 | Test the division-of-labour rule: (p, q) grid, a panel per (b', beta') | `--model exp --sweep p_q` | same (uses `cc_dc_dd_division`) | same, with `q = p`, `q = (p+1)/2`, `p = 1`, plus a prediction check printed |
+| The same (p, q) grid for the quadratic model, a panel per (b1', b2') | `--model quadratic --sweep p_q_quadratic` | same | same, with `q = p`, `q = (p+1)/2`, `p = 1`, plus a prediction check printed |
+| Other panel values, without editing code | add e.g. `--values beta=0.3,0.5` or `--values b2=0.7,0.95` | same | the changed values are added to the file name |
 | How investment is spread (a colour scale) | any | `--scheme mean_investment` | `mean_investment_<tag>.png` |
 | How cleanly groups divide the goods | any (made for `p_q`) | `--scheme division_of_labour_index` | `division_of_labour_index_<tag>.png` |
 | Each group's lean along one column of the grid | any (made for `p_q`) | `--cut 0.7` | `cut_p0.7_<tag>.png`: one row per start |
@@ -60,6 +62,12 @@ with the power mean `M_r(a, b) = ((a^r + b^r) / 2)^(1/r)`.
 | `b1_b2` | quadratic | p, q ∈ {0.8, 1, 1.25} | b1' and b2' from 0 to 4 | |
 | `b_beta` | exp | p, q ∈ {0.8, 1, 1.25} | b' from 0 to 6, beta' from 0.017 to 1.7 | |
 | `p_q` | exp | b' = 2, beta' ∈ {0.5, 0.75, 0.9} | p and q from 0.3 to 1.5 | `x_min = 1e-3` |
+| `p_q_quadratic` | quadratic | b1' = 2, b2' ∈ {1.2, 1.5, 2} (inside the rule's region: b1' > 1, b2' above both 1 and b1'/2) | p and q from 0.3 to 1.5 | `x_min = 1e-3` |
+
+`--values NAME=V1,V2,...` replaces a sweep's panel values (repeat it for the other panel parameter),
+e.g. `--sweep p_q_quadratic --values b1=1.2,1.6 --values b2=0.7`. The new values go into the file
+name (`..._p_q_quadratic_b1-1.2-1.6_b2-0.7_n100_...`), so runs with different values never overwrite
+each other. Grid ranges are changed in `coop/sweeps.py`.
 
 Each run starts from one of four corners, `(lo, lo)`, `(lo, hi)`, `(hi, lo)`, `(hi, hi)`, so every
 grid point is run four times.
@@ -119,7 +127,7 @@ With no file it uses the newest `results_*.npz` in the folder.
 | `mean_investment` | scale | share-weighted mean investment over groups and goods, divided by `x_max` (quadratic), the panel's `x*` (exp with b and beta per panel, scale up to 2) or the largest `x*` on the grid (exp otherwise) |
 | `division_of_labour_index` | scale | 0 to 1: how lopsided individuals are minus how lopsided the population is; 1 = groups specialise in opposite goods |
 
-Default: `cc_dc_dd_division` on the `p_q` sweep, `cc_dc_dd` otherwise. Several at once: `--scheme cc_dc_dd mean_investment`.
+Default: `cc_dc_dd_division` on a (p, q) grid (`p_q`, `p_q_quadratic`), `cc_dc_dd` otherwise. Several at once: `--scheme cc_dc_dd mean_investment`.
 
 A category scheme gives two figures, `<scheme>_<tag>_unfiltered.png` (what happened) and
 `..._filtered.png` (labels on fewer than 0.3% of grid points replaced by their nearest neighbour),
@@ -129,7 +137,8 @@ and prints label counts per panel and a check against theory:
 |---|---|
 | quadratic, `b1_b2` | the p = q = 1 panel against the one-good analytic diagram |
 | exp, `b_beta` | the p = q = 1 panel against the one-good exponential diagram |
-| exp, `p_q` | each panel against the division-of-labour rule (for beta' < 1, b' > beta') |
+| exp, `p_q` | each panel against the division-of-labour rule, where the one-good `x*` is an ESS (beta' < 1, b' > beta') |
+| quadratic, `p_q_quadratic` | the same, for b1' > 1 and b2' above both 1 and b1'/2 |
 
 A scale scheme gives one figure, `<scheme>_<tag>.png`, averaged over starts.
 

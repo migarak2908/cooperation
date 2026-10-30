@@ -104,7 +104,7 @@ def cut_lines(r, x_value):
 
 def compare(labels, r, division=False):
     # labels: unfiltered grid labels (panel a, panel b, grid row, grid column)
-    if grid(r) == ("q", "p") and r["model"] == "exp":
+    if grid(r) == ("q", "p"):
         compare_division_rule(labels, r, division)
     elif set(r["panel_names"]) == {"p", "q"}:
         if panel_index(r, p=1.0, q=1.0) is None:
@@ -165,9 +165,20 @@ def print_comparison(analytic, labels, r):
         print(f"  analytic {a!r:14s} simulated {s!r:28s} {int(((analytic == a) & (sim == s) & differ).sum()):4d} points")
 
 
+def rule_applies(r, i, j):
+    # whether the division-of-labour rule applies in panel (i, j): the one-good singular point x* must
+    # be an attracting, non-branching (ESS) point inside [0, x_max]; returns (applies, the condition)
+    v = lambda name: panel_value(r, name, i, j)
+    if r["model"] == "exp":
+        return v("beta") < 1 and v("b") > v("beta"), "beta < 1 and b > beta"
+    # quadratic: b1' > 1, and b2' above both 1 and b1'/2
+    b1, b2 = v("b1"), v("b2")
+    return b1 > 1 and b2 > max(1, b1 / 2), "b1' > 1 and b2' above both 1 and b1'/2"
+
+
 def compare_division_rule(labels, r, division=False):
-    # exponential, (p, q) grid: the division-of-labour prediction for each panel, away from its two
-    # boundary lines:
+    # (p, q) grid: the division-of-labour prediction for each panel where it applies (rule_applies),
+    # away from its two boundary lines:
     #   q < p -> DC;  p < q < (p + 1)/2 -> DC and DC' (DC without division);  q > (p + 1)/2 -> CC (DD if x* is tiny)
     from collections import Counter
     from coop.schemes import invested_threshold
@@ -177,11 +188,13 @@ def compare_division_rule(labels, r, division=False):
     boundary = (np.abs(Q - P) < cell) | (np.abs(Q - (P + 1) / 2) < cell)
     stars = x_star(r)
     print("prediction check (unfiltered labels, points within one grid cell of q = p or q = (p + 1)/2 left out):")
+    names = r["panel_names"]
     for i in range(labels.shape[0]):
         for j in range(labels.shape[1]):
-            b, beta = panel_value(r, "b", i, j), panel_value(r, "beta", i, j)
-            if beta >= 1 or b <= beta:
-                print(f"  b' = {b:g}, beta' = {beta:g}: skipped, the prediction needs beta < 1 and b > beta")
+            panel = ", ".join(f"{r['labels'][name]} = {panel_value(r, name, i, j):g}" for name in names)
+            applies, condition = rule_applies(r, i, j)
+            if not applies:
+                print(f"  {panel}: skipped, the prediction needs {condition}")
                 continue
             generalists = np.where(stars[i, j] > invested_threshold(r), "CC", "DD")
             predicted = np.select([Q < P, (P < Q) & (Q < (P + 1) / 2), Q > (P + 1) / 2],
@@ -189,6 +202,6 @@ def compare_division_rule(labels, r, division=False):
             sim = labels[i, j]
             used = ~boundary & (predicted != "boundary")
             differ = used & (sim != predicted)
-            print(f"  b' = {b:g}, beta' = {beta:g}: {int((used & ~differ).sum())} agree, {int(differ.sum())} differ")
+            print(f"  {panel}: {int((used & ~differ).sum())} agree, {int(differ.sum())} differ")
             for (a, s), c in Counter(zip(predicted[differ], sim[differ])).most_common(5):
                 print(f"    predicted {str(a)!r:14s} simulated {s!r:28s} {c:4d} points")

@@ -9,6 +9,8 @@
 #         python run_simulation.py --model quadratic --flat-benefit
 #         python run_simulation.py --model exp                            (sweep b_beta, the model's default)
 #         python run_simulation.py --model exp --sweep p_q --n 20
+#         python run_simulation.py --model exp --sweep p_q --values beta=0.3,0.5    (other panel values)
+#         python run_simulation.py --model quadratic --sweep p_q_quadratic --n 20
 #         python run_simulation.py --model quadratic --benefit individual_sum --hessian silas \
 #                                  --split-mode forced_once --stop fixed_time --start-jitter
 #         in Colab: %run run_simulation.py --model quadratic --n 10
@@ -32,10 +34,11 @@ def settings_for(model, sweep, **changes):
 
 
 def make_tag(model, sweep, s, n, base):
-    # model (with its options), sweep, grid size, x_max, and every setting changed from the command line
+    # model (with its options), sweep (with any panel values changed from the command line), grid size,
+    # x_max, and every setting changed from the command line
     short = lambda k, v: k if v is True else f"{k}{v:g}" if isinstance(v, float) else f"{k}-{v}"
     changed = [short(k, v) for k, v in asdict(s).items() if k != "x_max" and v != getattr(base, k)]
-    return "_".join([model.tag, sweep.name, f"n{n}", f"xmax{s.x_max:g}"] + changed)
+    return "_".join([model.tag, sweep.name] + sweeps.changed_values(sweep) + [f"n{n}", f"xmax{s.x_max:g}"] + changed)
 
 
 def load_or_simulate(model, sweep, s, n, tag):
@@ -99,6 +102,8 @@ if __name__ == "__main__":
     parser.add_argument("--model", choices=list(models.MODELS), default="quadratic")
     parser.add_argument("--sweep", choices=list(sweeps.SWEEPS), help="default: the model's own")
     parser.add_argument("--n", type=int, default=GRID_N, help="grid size per axis")
+    parser.add_argument("--values", action="append", default=[], metavar="NAME=V1,V2,...",
+                        help="panel values to use instead of the sweep's, e.g. --values b2=0.6,0.8 (repeatable)")
     model_options = parser.add_argument_group("model options")
     for name, (choices, help) in models.OPTIONS.items():
         flag = "--" + name.replace("_", "-")
@@ -121,6 +126,8 @@ if __name__ == "__main__":
     # 1. the model, the sweep and the settings
     model = models.make_model(args["model"], **{k: args[k] for k in models.OPTIONS if args[k] is not None})
     sweep = sweeps.SWEEPS[args["sweep"] or model.default_sweep]
+    values = {name: [float(v) for v in vs.split(",")] for name, vs in (item.split("=") for item in args["values"])}
+    sweep = sweeps.with_values(sweep, values)
     if sweep.params != set(model.params):
         raise SystemExit(f"sweep {sweep.name!r} varies {sorted(sweep.params)}, but model {model.name!r} has "
                          f"{sorted(model.params)}; sweeps for it: "
