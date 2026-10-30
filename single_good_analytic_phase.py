@@ -1,13 +1,27 @@
 import jax.numpy as jnp
 
 x_max = 2.0
+FLAT_BENEFIT = False      # True: the benefit stays at its maximum past its peak instead of falling (needs x_max <= 0.5)
 b1 = jnp.linspace(0, 4, 2000)
 b2 = jnp.linspace(0, 4, 2000)
 B1, B2 = jnp.meshgrid(b1, b2)
 
-D0   = B1 - 1
-Dmax = (B1 - 1) + (2 - 4 * B2) * x_max
-curv = 2 - 2 * B2
+# with x_max > 0.5 the cost x - x^2 falls past x = 0.5, so with a flat benefit the selection gradient
+# turns upwards there, adding a repeller the five regions below don't cover
+assert not (FLAT_BENEFIT and x_max > 0.5), "FLAT_BENEFIT needs x_max <= 0.5"
+
+# benefit B(z) = b1' z - b2' z^2 of a pair total z, peaking at z = b1' / (2 b2'); b2' can be 0
+peak = jnp.where(B2 > 0, B1 / (2 * jnp.where(B2 > 0, B2, 1.0)), jnp.inf)
+z_benefit = lambda z: jnp.minimum(z, peak) if FLAT_BENEFIT else z
+B = lambda z: B1 * z_benefit(z) - B2 * z_benefit(z) ** 2
+B_slope = lambda z: jnp.where(z < peak, B1 - 2 * B2 * z, 0.0) if FLAT_BENEFIT else B1 - 2 * B2 * z
+C = lambda x: x - x ** 2
+D = lambda x: B_slope(2 * x) - (1 - 2 * x)            # selection gradient of a population all at x
+
+D0   = D(0.0)
+# just inside the cap with a flat benefit: past the peak D = 2x - 1, exactly 0 at x_max = 0.5
+Dmax = D(x_max - 1e-6) if FLAT_BENEFIT else D(x_max)
+curv = 2 - 2 * B2         # x* is below the benefit's peak wherever it is an ESS or branches, so unchanged
 x_star = (B1 - 1) / ((4 * B2) - 2)
 
 # C
@@ -31,8 +45,9 @@ labels = jnp.select(conditions, codes, default=-1)
 
 
 # C and D region: cooperator share f, branches at 0 and x_max
+# (equal payoffs: f B(m) = f B(2m) + (1 - f) B(m) - C(m))
 m = x_max
-f = (B1 - 1 + m - B2 * m) / (2 * B2 * m)
+f = (B(m) - C(m)) / (2 * B(m) - B(2 * m))
 
 bad = (labels == 3) & ((f < 0) | (f > 1))
 print("C and D points with f outside [0, 1]:", int(bad.sum()))

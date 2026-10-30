@@ -43,6 +43,7 @@ def load(filename=None):
     r["x_max"], r["x_min"] = float(r["x_max"]), float(r["x_min"])
     r["p_values"], r["q_values"] = [float(v) for v in r["p_values"]], [float(v) for v in r["q_values"]]
     r["model"] = "exp" if "beta" in r else "quadratic"
+    r["flat_benefit"] = bool(r.get("flat_benefit", False))   # older results files have no flag
     r.update(model_axes(r))
     print(f"loaded {filename} ({r['model']} model)")
     not_converged = int((r["status"] == 2).sum())
@@ -353,6 +354,17 @@ def draw_lines(ax, b, x_max):
     ax.set_xlim(b[0], b[-1]); ax.set_ylim(b[0], b[-1])
 
 
+FLAT_REGION = (0.5, 1.0)             # flat benefit: branching is permissible for b2' in this range
+FLAT_LABEL = "branching permissible region (between)"
+
+
+def draw_flat_region(ax, b):
+    # flat benefit: the b2' = 1/2 and b2' = 1 lines bounding the region where branching is permissible
+    for level in FLAT_REGION:
+        ax.plot([b[0], b[-1]], [level, level], color="black", linewidth=1, linestyle="--")
+    ax.set_xlim(b[0], b[-1]); ax.set_ylim(b[0], b[-1])
+
+
 def exp_lines(r):
     # one-good reference lines for the exponential model, as (x points, y points, style, label),
     # keeping only those inside the plotted range
@@ -365,9 +377,13 @@ def exp_lines(r):
 
 
 def draw_reference(ax, r):
-    # the model's reference lines (SHADE_VALID_BAND is for the quadratic band only)
+    # the model's reference lines (SHADE_VALID_BAND is for the quadratic band only); with a flat
+    # benefit, the branching permissible region replaces the quadratic band
     if model(r) == "quadratic":
-        draw_lines(ax, r["b"], r["x_max"])
+        if r.get("flat_benefit", False):
+            draw_flat_region(ax, r["b"])
+        else:
+            draw_lines(ax, r["b"], r["x_max"])
         return
     for xs, ys, style, _ in exp_lines(r):
         ax.plot(xs, ys, color="black", linewidth=1, linestyle=style)
@@ -377,6 +393,8 @@ def draw_reference(ax, r):
 def reference_handles(r):
     from matplotlib.lines import Line2D
     if model(r) == "quadratic":
+        if r.get("flat_benefit", False):
+            return [Line2D([], [], color="black", linewidth=1, linestyle="--", label=FLAT_LABEL)]
         return line_handles()
     return [Line2D([], [], color="black", linewidth=1, linestyle=style, label=label) for _, _, style, label in exp_lines(r)]
 

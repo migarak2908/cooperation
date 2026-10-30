@@ -12,6 +12,7 @@
 # Usage:  python two_good_simulate.py             (100 x 100 grid)
 #         python two_good_simulate.py --n 10      (quick test)
 #         python two_good_simulate.py --flat-benefit   (benefit stays at its maximum past its peak)
+#         python two_good_simulate.py --flat-cost      (cost stays at its maximum past its peak)
 #         in Colab: %run two_good_simulate.py --n 10
 
 import argparse
@@ -34,6 +35,7 @@ B_MAX = 4.0
 LO, HI = 0.005 * x_max, 0.995 * x_max                  # 0.0025 and 0.4975 when x_max = 0.5
 STARTS = [(LO, LO), (LO, HI), (HI, LO), (HI, HI)]
 FLAT_BENEFIT = False                 # True: the benefit stays at its maximum past its peak instead of falling
+FLAT_COST = False                    # True: the cost stays at its maximum past its peak (Mq = 1/2) instead of falling
 
 TIME_STEP = 0.01                     # starting time step (halved while a run is cycling)
 MIN_DT = 1e-5
@@ -64,7 +66,9 @@ def P(y, x, b1, b2, p, q):
     safe_b2 = jnp.where(b2 > 0, b2, 1.0)
     peak = jnp.where(b2 > 0, b1 / (2 * safe_b2), jnp.inf)
     m = jnp.minimum(Mp, peak) if FLAT_BENEFIT else Mp
-    return b1 * m - b2 * m ** 2 - Mq + Mq ** 2
+    # the cost Mq - Mq^2 peaks at Mq = 1/2 (never passed while x_max <= 1/2, as Mq <= x_max)
+    c = jnp.minimum(Mq, 0.5) if FLAT_COST else Mq
+    return b1 * m - b2 * m ** 2 - c + c ** 2
 
 
 def largest_eigen(A):
@@ -293,7 +297,7 @@ def simulate(n):
 def load_or_simulate(n):
     # the results file holds the final state of every run plus the settings needed to read it,
     # so two_good_analysis.py needs nothing from this script
-    tag = f"xmax{x_max:g}{'_flat' if FLAT_BENEFIT else ''}_n{n}_dt{TIME_STEP:g}_chunk{CHUNK}_max{MAX_STEPS}_tol{TOL:g}_{'f64' if USE_X64 else 'f32'}"
+    tag = f"xmax{x_max:g}{'_flat' if FLAT_BENEFIT else ''}{'_flatcost' if FLAT_COST else ''}_n{n}_dt{TIME_STEP:g}_chunk{CHUNK}_max{MAX_STEPS}_tol{TOL:g}_{'f64' if USE_X64 else 'f32'}"
     filename = f"two_good_results_{tag}.npz"
     if os.path.exists(filename):
         print(f"{filename} already exists: loading it instead of simulating (delete it to re-run)")
@@ -302,7 +306,7 @@ def load_or_simulate(n):
     t = time.time()
     results = simulate(n).results()
     print(f"simulation took {time.time() - t:.0f}s")
-    results.update(tag=tag, x_max=x_max, x_min=x_min, flat_benefit=FLAT_BENEFIT, p_values=P_VALUES, q_values=Q_VALUES,
+    results.update(tag=tag, x_max=x_max, x_min=x_min, flat_benefit=FLAT_BENEFIT, flat_cost=FLAT_COST, p_values=P_VALUES, q_values=Q_VALUES,
                    b=np.linspace(0, B_MAX, n), starts=STARTS, merge_gap=MERGE_GAP, max_steps=MAX_STEPS)
     np.savez(filename, **results)
     print(f"saved {filename}")
@@ -310,12 +314,14 @@ def load_or_simulate(n):
 
 
 def check_payoff():
-    # expected values with the benefit falling past its peak, and flat there (FLAT_BENEFIT);
-    # the second case is just past the peak (Mp = 1.414, peak 1.333), the third well past it (Mp = 1, peak 0.8)
-    for y, x, b1, b2, p, q, falling, flat in [((0.5, 0.5), (0.5, 0.5), 2.0, 0.75, 1.0, 1.0, 1.0, 1.0),
-                                              ((1.0, 0.0), (1.0, 0.0), 2.0, 0.75, 2.0, 0.5, 1.141, 1.146),
-                                              ((0.5, 0.5), (0.5, 0.5), 1.2, 0.75, 1.0, 1.0, 0.20, 0.23)]:
-        expected = flat if FLAT_BENEFIT else falling
+    # expected values with: both falling past their peaks, flat benefit, flat cost, both flat;
+    # the second case is just past the benefit's peak (Mp = 1.414, peak 1.333), the third well past it
+    # (Mp = 1, peak 0.8), the fourth past both (Mp = 2, peak 1.333; Mq = 1, peak 0.5)
+    for y, x, b1, b2, p, q, expected in [((0.5, 0.5), (0.5, 0.5), 2.0, 0.75, 1.0, 1.0, (1.0, 1.0, 1.0, 1.0)),
+                                         ((1.0, 0.0), (1.0, 0.0), 2.0, 0.75, 2.0, 0.5, (1.141, 1.146, 1.141, 1.146)),
+                                         ((0.5, 0.5), (0.5, 0.5), 1.2, 0.75, 1.0, 1.0, (0.20, 0.23, 0.20, 0.23)),
+                                         ((1.0, 1.0), (1.0, 1.0), 2.0, 0.75, 1.0, 1.0, (1.0, 1.333, 0.75, 1.083))]:
+        expected = expected[FLAT_BENEFIT + 2 * FLAT_COST]
         got = float(P(jnp.array(y), jnp.array(x), b1, b2, p, q))
         print(f"  {'ok' if abs(got - expected) < 1e-3 else 'FAILED':6s} P(y={y}, x={x}, b1'={b1}, "
               f"b2'={b2}, p={p}, q={q}) = {got:.4f} (expected {expected})")
@@ -339,7 +345,7 @@ def print_summary(results):
             if capped.any() or pushed.any():
                 print(f"  p = {p:g}, q = {q:g}: {int(capped.sum())} runs not converged, "
                       f"{int(pushed.sum())} pushed off a saddle")
-    if FLAT_BENEFIT:
+    if FLAT_BENEFIT or FLAT_COST:
         print(f"runs with a group at x_max and a selection gradient of exactly 0 there "
               f"(extra benefit and extra cost both 0): {zero_gradient_at_x_max(results)}")
 
@@ -361,8 +367,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--n", type=int, default=GRID_N, help="grid size per axis")
     parser.add_argument("--flat-benefit", action="store_true", help="benefit stays at its maximum past its peak")
+    parser.add_argument("--flat-cost", action="store_true", help="cost stays at its maximum past its peak")
     args = parser.parse_args()
     FLAT_BENEFIT = args.flat_benefit
+    FLAT_COST = args.flat_cost
 
     print("running on:", jax.devices())
     print("payoff checks:"); check_payoff()
