@@ -362,46 +362,54 @@ def print_counts(labels, r, scheme, title):
 # ---------- cut at one p: each group's lean along q ----------
 
 def plot_cut(r, p_value):
-    # the grid column nearest p_value; per (b, beta) panel, every counted group of every start as a dot
-    # at (q, lean) with lean = d / t from -1 (only good 2) to +1 (only good 1), area ~ share;
+    # the grid column nearest p_value; one row per start, one column per (b, beta) panel; every counted
+    # group as a dot (coloured by start) at (q, lean) with lean = d / t from -1 (only good 2) to +1 (only good 1), area ~ share;
     # groups investing less than INVESTED_MIN in total sit at 0, hollow
     import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
     k = int(np.argmin(np.abs(r["p_axis"] - p_value)))
     p, q_axis = float(r["p_axis"][k]), r["q_axis"]
     xs, fs, counted = counted_groups(r["xs"][:, :, :, :, k], r["fs"][:, :, :, :, k], r)   # (start, b, beta, q, slot, ...)
     d, t = xs[..., 0] - xs[..., 1], xs[..., 0] + xs[..., 1]
     invests = t >= INVESTED_MIN
     lean = np.where(invests, d / np.where(invests, t, 1.0), 0.0)
+    Q = np.broadcast_to(q_axis[:, None], lean.shape[3:])                 # (q, slot)
     step = q_axis[1] - q_axis[0]
-    colours = plt.cm.tab10(np.arange(len(r["starts"])))
 
-    b_values, beta_values = r["b_values"], r["beta_values"]
-    fig, axes = plt.subplots(len(b_values), len(beta_values), sharex=True, sharey=True,
-                             figsize=(4.5 * len(beta_values) + 2, 4 * len(b_values) + 1.5), squeeze=False)
-    for i, b in enumerate(b_values):
-        for j, beta in enumerate(beta_values):
-            ax = axes[i, j]
-            for s, start in enumerate(r["starts"]):
-                offset = (s - (len(r["starts"]) - 1) / 2) * step / 4      # so the starts don't hide each other
-                Q = np.broadcast_to(q_axis[:, None], lean.shape[3:]) + offset
-                for filled in [True, False]:
-                    use = counted[s, i, j] & (invests[s, i, j] == filled)
-                    ax.scatter(Q[use], lean[s, i, j][use], s=200 * fs[s, i, j][use],
-                               facecolors=colours[s] if filled else "none", edgecolors=colours[s], linewidths=0.8,
-                               label=f"start ({start[0]:g}, {start[1]:g})" if filled and i == j == 0 else None)
+    starts, b_values, beta_values = r["starts"], r["b_values"], r["beta_values"]
+    columns = [(i, j, b, beta) for i, b in enumerate(b_values) for j, beta in enumerate(beta_values)]
+    fig, axes = plt.subplots(len(starts), len(columns), sharex=True, sharey=True,
+                             figsize=(4 * len(columns) + 1.5, 2.6 * len(starts) + 1.5), squeeze=False)
+    fig.subplots_adjust(left=0.12, bottom=0.12, top=0.9, wspace=0.15, hspace=0.25)
+
+    # largest dot (share 1): 80% of the distance between neighbouring q values, in points
+    width = axes[0, 0].get_position().width * fig.get_figwidth() * 72
+    size = (0.8 * width * step / (q_axis[-1] - q_axis[0] + 2 * step)) ** 2
+
+    colours = plt.cm.tab10(np.arange(len(starts)))                     # one colour per start (row)
+    for s, start in enumerate(starts):
+        for c, (i, j, b, beta) in enumerate(columns):
+            ax = axes[s, c]
+            for filled in [True, False]:
+                use = counted[s, i, j] & (invests[s, i, j] == filled)
+                ax.scatter(Q[use], lean[s, i, j][use], s=size * fs[s, i, j][use],
+                           facecolors=colours[s] if filled else "none", edgecolors=colours[s], linewidths=0.6)
             ax.axvline(p, color="black", linewidth=1, linestyle="--")
             ax.axvline((p + 1) / 2, color="black", linewidth=1, linestyle=":")
             ax.set_xlim(q_axis[0] - step, q_axis[-1] + step); ax.set_ylim(-1.1, 1.1)
-            ax.set_title(f"b' = {b:g}, beta' = {beta:g}, p = {p:.3g}", fontsize=10)
-            ax.set_xlabel("q"); ax.set_ylabel("lean (x1 - x2) / (x1 + x2)")
-    from matplotlib.lines import Line2D
-    handles = axes[0, 0].get_legend_handles_labels()[0] + [
-        Line2D([], [], color="black", linewidth=1, linestyle="--", label="q = p"),
-        Line2D([], [], color="black", linewidth=1, linestyle=":", label="q = (p + 1)/2"),
-        Line2D([], [], marker="o", color="grey", markerfacecolor="none", linestyle="", label=f"invests < {INVESTED_MIN:g}")]
+            if s == 0:
+                ax.set_title(f"b' = {b:g}, beta' = {beta:g}, p = {p:.3g}", fontsize=10)
+            if s == len(starts) - 1:
+                ax.set_xlabel("q")
+            if c == 0:
+                ax.set_ylabel(f"start ({start[0]:g}, {start[1]:g})\nlean (x1 - x2) / (x1 + x2)", fontsize=9)
+    handles = [Line2D([], [], color="black", linewidth=1, linestyle="--", label="q = p"),
+               Line2D([], [], color="black", linewidth=1, linestyle=":", label="q = (p + 1)/2"),
+               Line2D([], [], marker="o", color="grey", linestyle="", label="group (area ~ share)"),
+               Line2D([], [], marker="o", color="grey", markerfacecolor="none", linestyle="",
+                      label=f"invests < {INVESTED_MIN:g}")]
     fig.legend(handles=handles, loc="lower center", ncol=len(handles), fontsize=8)
-    fig.suptitle(f"groups at p = {p:.3g} (nearest to {p_value:g}), dot area ~ share - {r['tag']}")
-    fig.subplots_adjust(bottom=0.2, wspace=0.25, hspace=0.3)
+    fig.suptitle(f"groups at p = {p:.3g} (nearest to {p_value:g}), one row per start - {r['tag']}", fontsize=10)
     save(fig, f"cut_p{p_value:g}_{r['tag']}.png")
 
 
