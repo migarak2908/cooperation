@@ -197,14 +197,17 @@ The same works for any two runs on the same grid, e.g. with and without `--flat-
 How the population evolves over time for a few (p, q) conditions, in the style of DHK's Fig. 1 time panels.
 
 ```
-python run_trajectories.py [--start X1,X2]
+python run_trajectories.py [--start X1,X2] [--end-time T]
 ```
 
 - Quadratic model with the flat benefit, `tol = 1e-5`, DHK's ESS point B converted: b1' = 7/4.6, b2' = 1.5.
 - One run per condition, editable in `CONDITIONS` at the top of the script: (1, 1) "DHK", (0.95, 1) "benefit favours balance", (1, 0.95) "cost favours concentration", (0.9, 0.92) "both: division of labour".
 - Every run starts at `--start` (default 0.04, 0.01, slightly towards good 1) and runs until it has finished. The state is recorded every 20 steps (0.2 time units) through `engine.simulate`'s `record` argument.
-- One column per condition, time going up, with the same limits in every column. Left, "total": x1 + x2 per group (grey). Right, "split": x1 − x2 per group, coloured by lean (x1 − x2)/(x1 + x2), red −1, purple 0, blue +1. Line width is proportional to share, and a split shows as a fork from the parent.
-- Saves `trajectories_<tag>.png` and the recorded data, `trajectories_<tag>.npz` (`times_<c>`, `xs_<c>`, `fs_<c>` per condition c, plus the meta).
+- Every run is held at its final state up to a common end time, `--end-time` (default: the longest run's finishing time), so all lines reach the end.
+- Two figures from the same runs. Group colours show the lean (x1 − x2)/(x1 + x2): red −1, purple 0, blue +1. Line width is proportional to share, and a split shows as a fork from the parent.
+  - `trajectories_time_<tag>.png`: one column per condition with the split x1 − x2 (−0.3 to 0.3, dashed line at 0) against log time going up, so the fast early phase and the slow split both show. Below is one shared panel of each condition's share-weighted total x1 + x2 against log time (one line style per condition), which shows the totals coincide.
+  - `trajectories_plane_<tag>.png`: one square (x1, x2) panel per condition, 0 to 0.3. It shows the diagonal x1 = x2, a dashed "same total" line x1 + x2 = the (1, 1) run's final total, each group's path with arrowheads at times 0.5, 2, 8, 32 and 128, and a dot sized by share where each group ends. There is a shared lean colour bar.
+- Also saves the recorded data, `trajectories_<tag>.npz` (`times_<c>`, `xs_<c>`, `fs_<c>` per condition c, with the held last frame, plus the meta including each run's finishing time).
 
 ## One-good scripts
 
