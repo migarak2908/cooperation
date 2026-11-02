@@ -64,6 +64,7 @@ with the power mean `M_r(a, b) = ((a^r + b^r) / 2)^(1/r)`.
 | `b_beta` | exp | p, q ∈ {0.8, 1, 1.25} | b' from 0 to 6, beta' from 0.017 to 1.7 | |
 | `p_q` | exp | b' = 2, beta' ∈ {0.5, 0.75, 0.9} | p and q from 0.3 to 1.5 | `x_min = 1e-3` |
 | `p_q_quadratic` | quadratic | b1' = 2, b2' ∈ {1.2, 1.5, 2} (inside the rule's region: b1' > 1, b2' above both 1 and b1'/2) | p and q from 0.3 to 1.5 | `x_min = 1e-3` |
+| `p_q_near_one` | quadratic | as `p_q_quadratic` | p and q from 0.8 to 1.2 (zoomed in on p = q = 1) | `x_min = 1e-3` |
 
 `--values NAME=V1,V2,...` replaces a sweep's panel values (repeat it for the other panel parameter),
 e.g. `--sweep p_q_quadratic --values b1=1.2,1.6 --values b2=0.7`. The new values go into the file
@@ -137,7 +138,7 @@ With no file it uses the newest `results_*.npz` in the folder.
 
 `individual`, `population` and `division_of_labour_index` are NaN (light grey) where nobody invests: a share-weighted total `sum f_i t_i` below 1% of twice the scale (this also covers runs sitting near `x_min`). Averages over starts ignore NaN, so a grid point is NaN only if every start is; in `--summary` NaN counts as not met.
 
-Default: `cc_dc_dd_division` on a (p, q) grid (`p_q`, `p_q_quadratic`), `cc_dc_dd` otherwise. Several at once: `--scheme cc_dc_dd mean_investment`.
+Default: `cc_dc_dd_division` on a (p, q) grid (`p_q`, `p_q_quadratic`, `p_q_near_one`), `cc_dc_dd` otherwise. Several at once: `--scheme cc_dc_dd mean_investment`.
 
 A category scheme gives two figures, `<scheme>_<tag>_unfiltered.png` (what happened) and
 `..._filtered.png` (labels on fewer than 0.3% of grid points replaced by their nearest neighbour),

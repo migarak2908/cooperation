@@ -52,6 +52,10 @@ SWEEPS = {
     "p_q_quadratic": Sweep("p_q_quadratic", panels=(("b1", [2.0]), ("b2", [1.2, 1.5, 2.0])),
                            grid=(("q", Axis(0.3, 1.5)), ("p", Axis(0.3, 1.5))), panel_rows="b1",
                            settings=dict(x_min=1e-3)),
+    # the same, zoomed in on p = q = 1
+    "p_q_near_one": Sweep("p_q_near_one", panels=(("b1", [2.0]), ("b2", [1.2, 1.5, 2.0])),
+                          grid=(("q", Axis(0.8, 1.2)), ("p", Axis(0.8, 1.2))), panel_rows="b1",
+                          settings=dict(x_min=1e-3)),
 }
 
 
