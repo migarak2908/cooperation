@@ -192,6 +192,20 @@ python run_analysis.py results_quadratic_b1_b2_n100_xmax2.npz \
 
 The same works for any two runs on the same grid, e.g. with and without `--flat-benefit`.
 
+## run_trajectories.py
+
+How the population evolves over time for a few (p, q) conditions, in the style of DHK's Fig. 1 time panels.
+
+```
+python run_trajectories.py [--start X1,X2]
+```
+
+- Quadratic model with the flat benefit, `tol = 1e-5`, DHK's ESS point B converted: b1' = 7/4.6, b2' = 1.5.
+- One run per condition, editable in `CONDITIONS` at the top of the script: (1, 1) "DHK", (0.95, 1) "benefit favours balance", (1, 0.95) "cost favours concentration", (0.9, 0.92) "both: division of labour".
+- Every run starts at `--start` (default 0.04, 0.01, slightly towards good 1) and runs until it has finished. The state is recorded every 20 steps (0.2 time units) through `engine.simulate`'s `record` argument.
+- One column per condition, time going up, with the same limits in every column. Left, "total": x1 + x2 per group (grey). Right, "split": x1 − x2 per group, coloured by lean (x1 − x2)/(x1 + x2), red −1, purple 0, blue +1. Line width is proportional to share, and a split shows as a fork from the parent.
+- Saves `trajectories_<tag>.png` and the recorded data, `trajectories_<tag>.npz` (`times_<c>`, `xs_<c>`, `fs_<c>` per condition c, plus the meta).
+
 ## One-good scripts
 
 The scripts in `single_good/` are small and self-contained; run them directly:
@@ -220,6 +234,7 @@ They show their figures with `plt.show()`; on Colab put `%matplotlib inline` bef
 ```
 run_simulation.py       simulation entry point
 run_analysis.py         analysis entry point
+run_trajectories.py     a few runs over time (DHK Fig. 1 style)
 coop/
   models.py             payoff models and their checks
   sweeps.py             parameter sweeps

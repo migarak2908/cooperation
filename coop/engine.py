@@ -317,10 +317,14 @@ def split(s, runs, run, groups, v, K):
     return K
 
 
-def simulate(model, sweep, s, n):
-    # every run of the sweep until it has finished; returns the final state (Runs.results)
+def simulate(model, sweep, s, n, record=None):
+    # every run of the sweep until it has finished; returns the final state (Runs.results).
+    # record: optional function of the Runs object, called once when they are created (before any
+    # chunk, so the start is recorded and can be changed) and after every chunk
     engine = make_engine(model, s)
     runs = Runs(model, sweep, s, n)
+    if record:
+        record(runs)
     N = runs.status.size
     waiting = {K: deque() for K in s.k_levels}         # runs waiting for a place in a batch
     running = {K: [] for K in s.k_levels}              # runs in the batch at each slot count
@@ -342,6 +346,8 @@ def simulate(model, sweep, s, n):
             for run in moved_up:
                 waiting[runs.max_k[run]].append(run)
             chunks += 1
+            if record:
+                record(runs)
 
         if chunks % 20 == 0:
             print(f"  {time.time() - t0:6.0f}s  finished {int((runs.status > 0).sum())}/{N}  "
