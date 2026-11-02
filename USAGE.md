@@ -206,21 +206,23 @@ python run_trajectories.py [--start X1,X2] [--total shared|strips] [--end-time T
 - Lines are coloured by lean (x1 − x2)/(x1 + x2): red at −1, purple at 0, blue at +1.
 - Line width is 0.6 + 2.4 × share pt, so the branches after a split are thinner. Each branch forks from its parent.
 - A black diamond marks every split, where the parent was. A split is a group appearing in an empty slot; a saddle push is not marked.
-- Every panel's third title line says which part of the division-of-labour rule its (p, q) satisfies: `neutral` (p = q = 1), `q > (p+1)/2` (generalists), `q < p` (specialists) or `p < q < (p+1)/2` (division of labour).
+- The division-of-labour panels have a third title line, `p < q < (p+1)/2`, the part of the rule they satisfy.
 
-**Figure A, `trajectories_time_<tag>.png`:** one run per condition in `TIME_CONDITIONS`, all from `--start` (default 0.155, 0.005: x1 − x2 = 0.15, total 0.16).
-- Conditions: (1, 1) DHK, (0.95, 1) benefit favours balance, (0.95, 1.05) both favour balance, (1, 0.95) cost favours concentration, (1.05, 0.95) both favour concentration, (0.9, 0.92) division of labour.
-- Per column, a split panel: x1 − x2 from −0.3 to 0.3, with a dashed line at 0, against log time going up from the first recorded time.
-- `--total shared` (default) adds one panel below all the columns, with every condition's share-weighted total overlaid in its own line style.
+**Conditions (both figures, `CONDITIONS`):** (1, 1) DHK, (0.95, 1) benefit favours balance, (0.95, 1.05) both favour balance, (1, 0.95) cost favours concentration, (1.05, 0.95) both favour concentration, (0.9, 0.92) division of labour.
+
+**Figure A, `trajectories_time_<tag>.png`:** one run per condition, all from `--start` (default 0.155, 0.005: x1 − x2 = 0.15, total 0.16).
+- Every line starts at time 0 at its initial values. The time axis is linear from 0 to 1 and logarithmic after (symlog).
+- Per column, a split panel: x1 − x2 from −0.3 to 0.3, with a dashed line at 0, time going up.
+- `--total shared` (default) adds one panel below all the columns, with every condition's share-weighted total overlaid in its own line style. Its y-axis starts just below the initial total.
 - `--total strips` instead puts a narrow grey total panel beside each split panel.
 
-**Figure B, `trajectories_plane_<tag>.png`:** each condition in `PLANE_CONDITIONS` with its own starts, all with total 0.16.
-- Starts: towards good 1 (0.155, 0.005), balanced (0.08, 0.08, exactly on the diagonal: the engine's saddle push and split test take it off), towards good 2 (0.005, 0.155).
-- DHK (1, 1) and division of labour (0.9, 0.92) use all three starts. Generalists (0.95, 1) and specialists (1, 0.95) use only the two offset ones.
+**Figure B, `trajectories_plane_<tag>.png`:** the same six conditions in two rows of three, each with its own starts, all with total 0.16.
+- Starts: towards good 1 (0.11, 0.05), balanced (0.08, 0.08), towards good 2 (0.05, 0.11). The balanced start is exactly on the diagonal; the engine's saddle push and split test take it off.
+- DHK and division of labour use all three starts. The generalist and specialist panels use only the two offset ones.
 - Each panel shows x1 across and x2 up, from 0 to 0.3. It has a faint diagonal and a dashed line x1 + x2 = the final total of the balanced DHK run.
-- Paths have arrowheads. Each start is a hollow circle, and each group's end is a dot sized by share. The panels share a lean colour bar.
+- Paths have arrowheads. Each start is a hollow circle, and each group's end is a dot sized by share. The colour bar for lean is on the right.
 
-The condition and start lists are at the top of the script. The recorded data are saved next to each figure as `trajectories_time_<tag>.npz` and `trajectories_plane_<tag>.npz`. These hold `times_<c>_<s>`, `xs_<c>_<s>` and `fs_<c>_<s>` per condition c and start s, with the held last frame. The meta includes the starts and finishing times.
+`CONDITIONS` and the starts are at the top of the script. The recorded data are saved next to each figure as `trajectories_time_<tag>.npz` and `trajectories_plane_<tag>.npz`. These hold `times_<c>_<s>`, `xs_<c>_<s>` and `fs_<c>_<s>` per condition c and start s, with the held last frame. The meta includes the starts and finishing times.
 
 ## One-good scripts
 

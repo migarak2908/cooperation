@@ -1,13 +1,12 @@
 # How the population evolves over time for a few (p, q) conditions, in the style of DHK's Fig. 1 time
 # panels. Runs are recorded after every chunk and held at their final state up to a common end time
 # (the longest run's finishing time by default). Two figures, each from its own runs:
-#   trajectories_time_<tag>.png:   one run per TIME_CONDITIONS entry, from --start; the split x1 - x2
-#                                  against log time per condition, with the totals shared or as strips
-#   trajectories_plane_<tag>.png:  each PLANE_CONDITIONS entry's runs (its own starts), as paths in the
+#   trajectories_time_<tag>.png:   one run per condition, from --start; the split x1 - x2 against time
+#                                  (linear to 1, log after) per condition, with the totals shared or as strips
+#   trajectories_plane_<tag>.png:  each condition's runs (its own plane starts), as paths in the
 #                                  (x1, x2) plane
 # and the recorded data of each as a .npz next to it. Lines are coloured by lean, as wide as the
-# group's share, and a black diamond marks each split. Every panel's third title line says which part
-# of the division-of-labour rule its (p, q) satisfies. See USAGE.md.
+# group's share, and a black diamond marks each split. See USAGE.md.
 #
 # Usage:  python run_trajectories.py                       (totals shared)
 #         python run_trajectories.py --total strips --start 0.1,0.02
@@ -33,24 +32,20 @@ from run_simulation import settings_for
 B1, B2 = 7 / 4.6, 1.5
 SETTINGS = dict(tol=1e-5, chunk=20)       # chunk: steps between records (20 steps = 0.2 time units)
 
-# starts, all with total 0.16; the balanced one is exactly on the diagonal (the engine's saddle push
-# and split test take it off)
-GOOD_1, BALANCED, GOOD_2 = (0.155, 0.005), (0.08, 0.08), (0.005, 0.155)
+# figure A: every run starts at --start (default START), total 0.16
+START = (0.155, 0.005)
 
-# figure A: (p, q) and title per column; every run starts at --start (default START)
-TIME_CONDITIONS = [((1.0, 1.0),   "DHK"),
-                   ((0.95, 1.0),  "benefit favours balance"),
-                   ((0.95, 1.05), "both favour balance"),
-                   ((1.0, 0.95),  "cost favours concentration"),
-                   ((1.05, 0.95), "both favour concentration"),
-                   ((0.9, 0.92),  "division of labour")]
-START = GOOD_1
+# figure B's starts, all with total 0.16; the balanced one is exactly on the diagonal (the engine's
+# saddle push and split test take it off)
+GOOD_1, BALANCED, GOOD_2 = (0.11, 0.05), (0.08, 0.08), (0.05, 0.11)
 
-# figure B: (p, q), title and starts per panel
-PLANE_CONDITIONS = [((1.0, 1.0),  "DHK",                        [GOOD_1, BALANCED, GOOD_2]),
-                    ((0.95, 1.0), "benefit favours balance",    [GOOD_1, GOOD_2]),
-                    ((1.0, 0.95), "cost favours concentration", [GOOD_1, GOOD_2]),
-                    ((0.9, 0.92), "both: division of labour",   [GOOD_1, BALANCED, GOOD_2])]
+# both figures: (p, q), title and figure B's starts, one column (A) or panel (B) each
+CONDITIONS = [((1.0, 1.0),   "DHK",                        [GOOD_1, BALANCED, GOOD_2]),
+              ((0.95, 1.0),  "benefit favours balance",    [GOOD_1, GOOD_2]),
+              ((0.95, 1.05), "both favour balance",        [GOOD_1, GOOD_2]),
+              ((1.0, 0.95),  "cost favours concentration", [GOOD_1, GOOD_2]),
+              ((1.05, 0.95), "both favour concentration",  [GOOD_1, GOOD_2]),
+              ((0.9, 0.92),  "division of labour",         [GOOD_1, BALANCED, GOOD_2])]
 
 SPLIT_LIMIT = 0.3                    # figure A: the split panels' x-axis, -0.3 to 0.3
 PLANE_LIMIT = 0.3                    # figure B: x1 and x2 from 0 to 0.3
@@ -64,24 +59,18 @@ def width(share):
     return 0.6 + 2.4 * share
 
 
-def rule_part(p, q):
-    # which part of the division-of-labour rule (p, q) satisfies
-    if p == q == 1:
-        return "neutral"
-    if q < p:
-        return "q < p"
-    return "q > (p+1)/2" if q > (p + 1) / 2 else "p < q < (p+1)/2"
-
-
 def title(pq, name):
-    return f"{name}\np = {pq[0]:g}, q = {pq[1]:g}\n{rule_part(*pq)}"
+    # the division-of-labour panels also say which part of the rule they satisfy
+    p, q = pq
+    rule = "\np < q < (p+1)/2" if p < q < (p + 1) / 2 else ""
+    return f"{name}\np = {p:g}, q = {q:g}{rule}"
 
 
 # ---------- simulate and record ----------
 
 def simulate(conditions, end_time):
-    # conditions: [((p, q), starts)]; one run per (condition, start), recorded after every chunk and
-    # held at its final state up to end_time (default: the longest run's finishing time). Returns, per
+    # conditions: [((p, q), starts)]; one run per (condition, start), recorded at time 0 and after
+    # every chunk, and held at its final state up to end_time (default: the longest run's finishing time). Returns, per
     # condition, a list of runs dict(start, times, xs, fs, finished)
     model = models.make_model("quadratic", flat_benefit=True)
     ps = sorted({p for (p, _), _ in conditions})
@@ -167,13 +156,12 @@ def lean(x):
     return np.where(total > 0, (x[..., 0] - x[..., 1]) / np.where(total > 0, total, 1), 0.0)
 
 
-def draw(ax, r, point, first=0, colour=None):
+def draw(ax, r, point, colour=None):
     # every group's path through point(x, k) (x = (x1, x2) at frame k), coloured by lean (or colour) and
-    # as wide as its share, and a diamond at each split, where the parent was; first: the first frame
-    # drawn (1 leaves out time 0 on a log axis)
+    # as wide as its share, and a diamond at each split, where the parent was
     xs, fs = r["xs"], r["fs"]
     paths, splits = paths_and_splits(r)
-    edges = [(a, b) for path in paths for a, b in zip(path, path[1:]) if a[0] >= first]
+    edges = [(a, b) for path in paths for a, b in zip(path, path[1:])]
     ax.add_collection(LineCollection(
         [[point(xs[a], a[0]), point(xs[b], b[0])] for a, b in edges],
         colors=colour or [LEAN((lean(xs[b]) + 1) / 2) for a, b in edges],
@@ -195,8 +183,10 @@ def split_legend(fig, extra=()):
 # ---------- figure A: time panels ----------
 
 def plot_time(data, total, start, filename):
+    # time from 0: linear up to 1, logarithmic after
     runs = [rs[0] for rs in data]
-    t_min, t_max = min(r["times"][1] for r in runs), max(r["times"][-1] for r in runs)
+    t_max = max(r["times"][-1] for r in runs)
+    time_axis = dict(value="symlog", linthresh=1)
     n, strips = len(runs), total == "strips"
     fig = plt.figure(figsize=(2.9 * n + 0.6, 6.5 if strips else 8.5))
     if strips:          # per condition: split, total (half as wide), gap
@@ -206,48 +196,50 @@ def plot_time(data, total, start, filename):
         grid = fig.add_gridspec(2, n, height_ratios=[3, 1.2], hspace=0.5, wspace=0.35,
                                 left=0.06, right=0.98, top=0.85, bottom=0.1)
 
-    for c, (r, (pq, name)) in enumerate(zip(runs, TIME_CONDITIONS)):
+    for c, (r, (pq, name, _)) in enumerate(zip(runs, CONDITIONS)):
         ax = fig.add_subplot(grid[0, 3 * c] if strips else grid[0, c])
-        draw(ax, r, lambda x, k: (x[0] - x[1], r["times"][k]), first=1)
+        draw(ax, r, lambda x, k: (x[0] - x[1], r["times"][k]))
         ax.axvline(0, color="black", linestyle="--", linewidth=0.6)
-        ax.set(xlim=(-SPLIT_LIMIT, SPLIT_LIMIT), yscale="log", ylim=(t_min, t_max))
+        ax.set_yscale(**time_axis)
+        ax.set(xlim=(-SPLIT_LIMIT, SPLIT_LIMIT), ylim=(0, t_max))
         ax.set_xlabel("split x1 - x2", fontsize=8)
         ax.set_ylabel("time" if c == 0 else "")
         ax.tick_params(labelsize=7)
         ax.set_title(title(pq, name), fontsize=9, loc="left" if strips else "center")
         if strips:
             strip = fig.add_subplot(grid[0, 3 * c + 1], sharey=ax)
-            draw(strip, r, lambda x, k: (x[0] + x[1], r["times"][k]), first=1, colour="grey")
+            draw(strip, r, lambda x, k: (x[0] + x[1], r["times"][k]), colour="grey")
             strip.set_xlim(0, 1.1 * max(np.max(r["xs"].sum(axis=-1)) for r in runs))
             strip.set_xlabel("total", fontsize=8)
             strip.tick_params(labelsize=7, labelleft=False)
 
     if not strips:
         ax = fig.add_subplot(grid[1, :])
-        for r, (pq, name), style in zip(runs, TIME_CONDITIONS, TOTAL_STYLES):
-            ax.plot(r["times"][1:], mean_total(r)[1:], linestyle=style, color="black", linewidth=1,
+        for r, (pq, name, _), style in zip(runs, CONDITIONS, TOTAL_STYLES):
+            ax.plot(r["times"], mean_total(r), linestyle=style, color="black", linewidth=1,
                     label=f"{name} (p = {pq[0]:g}, q = {pq[1]:g})")
-        ax.set(xscale="log", xlim=(t_min, t_max))
+        ax.set_xscale(**time_axis)
+        ax.set(xlim=(0, t_max), ylim=(min(mean_total(r)[0] for r in runs) - 0.01, None))
         ax.set_xlabel("time")
         ax.set_ylabel("total x1 + x2\n(share-weighted)", fontsize=8)
         ax.tick_params(labelsize=7)
         ax.legend(fontsize=7, frameon=False, ncol=2)
     split_legend(fig)
     fig.text(0.5, 0.01, f"All runs start towards good 1 (x1 − x2 = {start[0] - start[1]:g}). "
-             "Time in model units, log scale.", ha="center", fontsize=9)
+             "Time in model units, linear up to 1, log after.", ha="center", fontsize=9)
     plots.save(fig, filename)
 
 
 # ---------- figure B: investment plane ----------
 
 def plot_plane(data, filename):
-    # same-total line: the final total of the balanced DHK run
-    dhk = data[[pq for pq, *_ in PLANE_CONDITIONS].index((1.0, 1.0))]
+    # two rows of three panels; same-total line: the final total of the balanced DHK run
+    dhk = data[[pq for pq, *_ in CONDITIONS].index((1.0, 1.0))]
     same_total = mean_total(next(r for r in dhk if r["start"] == BALANCED))[-1]
-    fig, axes = plt.subplots(1, len(data), figsize=(3.3 * len(data) + 1, 4.6))
-    fig.subplots_adjust(left=0.05, right=0.88, top=0.78, bottom=0.16, wspace=0.3)
+    fig, axes = plt.subplots(2, 3, figsize=(11, 8.6))
+    fig.subplots_adjust(left=0.06, right=0.86, top=0.9, bottom=0.08, wspace=0.3, hspace=0.4)
 
-    for ax, runs, (pq, name, _) in zip(axes, data, PLANE_CONDITIONS):
+    for ax, runs, (pq, name, _) in zip(axes.flat, data, CONDITIONS):
         ax.set(xlim=(0, PLANE_LIMIT), ylim=(0, PLANE_LIMIT), aspect="equal")
         ax.plot([0, PLANE_LIMIT], [0, PLANE_LIMIT], color="grey", linewidth=0.5, alpha=0.5)
         ax.plot([0, same_total], [same_total, 0], color="grey", linestyle="--", linewidth=0.8)
@@ -272,7 +264,7 @@ def plot_plane(data, filename):
         ax.set_title(title(pq, name), fontsize=9)
 
     split_legend(fig, [Line2D([], [], color="grey", linestyle="--", linewidth=0.8, label="same total as p = q = 1")])
-    bar = fig.colorbar(ScalarMappable(norm=Normalize(-1, 1), cmap=LEAN), cax=fig.add_axes([0.91, 0.25, 0.012, 0.45]))
+    bar = fig.colorbar(ScalarMappable(norm=Normalize(-1, 1), cmap=LEAN), cax=fig.add_axes([0.9, 0.3, 0.015, 0.4]))
     bar.set_ticks([-1, 0, 1], labels=["all good 2", "equal", "all good 1"])
     bar.set_label("lean (x1 - x2) / (x1 + x2)", fontsize=8)
     bar.ax.tick_params(labelsize=7)
@@ -283,7 +275,7 @@ def plot_plane(data, filename):
 
 def print_final(data, conditions):
     for runs, (pq, name, *_) in zip(data, conditions):
-        print(f"{name} (p = {pq[0]:g}, q = {pq[1]:g}, {rule_part(*pq)}):")
+        print(f"{name} (p = {pq[0]:g}, q = {pq[1]:g}):")
         for r in runs:
             alive = r["fs"][-1] > 0
             groups = ", ".join(f"({x1:.3f}, {x2:.3f}) share {f:.2f}" for (x1, x2), f in zip(r["xs"][-1][alive], r["fs"][-1][alive]))
@@ -304,17 +296,17 @@ if __name__ == "__main__":
 
     base = ["quadratic_flat", f"b1-{B1:.4g}", f"b2-{B2:g}", f"tol{SETTINGS['tol']:g}", f"chunk{SETTINGS['chunk']}"]
     end = [f"end{args.end_time:g}"] if args.end_time else []
-    names = lambda conditions: [f"p{p:g}-q{q:g}" for (p, q), *_ in conditions]
-    time_tag = "_".join(base + names(TIME_CONDITIONS) + [f"start-{start[0]:g}-{start[1]:g}", f"total-{args.total}"] + end)
-    plane_tag = "_".join(base + names(PLANE_CONDITIONS) + end)
+    base += [f"p{p:g}-q{q:g}" for (p, q), *_ in CONDITIONS]
+    time_tag = "_".join(base + [f"start-{start[0]:g}-{start[1]:g}", f"total-{args.total}"] + end)
+    plane_tag = "_".join(base + end)
     print("running on:", jax.devices())
 
-    data = simulate([(pq, [start]) for pq, _ in TIME_CONDITIONS], args.end_time)
-    save_data(data, TIME_CONDITIONS, f"trajectories_time_{time_tag}.npz")
+    data = simulate([(pq, [start]) for pq, _, _ in CONDITIONS], args.end_time)
+    save_data(data, CONDITIONS, f"trajectories_time_{time_tag}.npz")
     plot_time(data, args.total, start, f"trajectories_time_{time_tag}.png")
-    print_final(data, TIME_CONDITIONS)
+    print_final(data, CONDITIONS)
 
-    data = simulate([(pq, starts) for pq, _, starts in PLANE_CONDITIONS], args.end_time)
-    save_data(data, PLANE_CONDITIONS, f"trajectories_plane_{plane_tag}.npz")
+    data = simulate([(pq, starts) for pq, _, starts in CONDITIONS], args.end_time)
+    save_data(data, CONDITIONS, f"trajectories_plane_{plane_tag}.npz")
     plot_plane(data, f"trajectories_plane_{plane_tag}.png")
-    print_final(data, PLANE_CONDITIONS)
+    print_final(data, CONDITIONS)
