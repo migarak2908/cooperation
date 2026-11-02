@@ -8,6 +8,8 @@
 #         python run_analysis.py RESULTS.npz --cut 0.7             (each group's lean, at grid column 0.7)
 #         python run_analysis.py RESULTS.npz --compare OTHER.npz   (side by side, and where labels differ)
 #         python run_analysis.py RESULTS.npz --scheme mean_investment --relative-to p=1,q=1   (minus that panel)
+#         python run_analysis.py RESULTS.npz --scheme mean_investment --relative-to-point p=1,q=1
+#                                                                  (minus that grid point, in each panel)
 #         python run_analysis.py RESULTS.npz --summary             (fraction of each panel meeting SUMMARIES)
 #         python run_analysis.py RESULTS.npz --starts 0 3          (only the runs from starts 0 and 3)
 #         in Colab: %run run_analysis.py RESULTS.npz
@@ -95,7 +97,22 @@ def relative(values, r, reference):
     return out
 
 
-def analyse(r, name, relative_to=None):
+def relative_point(values, r, point):
+    # values (panel a, panel b, row, column) minus, in each panel, the value at the grid point with
+    # point's grid-parameter values
+    (y, x), (y_axis, x_axis) = r["grid_names"], r["grid_axes"]
+    if set(point) != {y, x}:
+        raise SystemExit(f"--relative-to-point: give both grid parameters, {y} and {x}, e.g. {x}=1,{y}=1")
+    def index(name, axis):
+        found = np.flatnonzero(axis == point[name])
+        if not len(found):
+            raise SystemExit(f"--relative-to-point: the grid has no {name} = {point[name]:g} "
+                             f"(its values: {', '.join(f'{v:g}' for v in axis)})")
+        return found[0]
+    return values - values[:, :, index(y, y_axis), index(x, x_axis)][:, :, None, None]
+
+
+def analyse(r, name, relative_to=None, point=None):
     scheme = SCHEMES[name]
     values = scheme["outcome"](r["xs"], r["fs"], r)            # (start, panel a, panel b, row, column)
     base = f"{name}_{r['tag']}"
@@ -106,10 +123,16 @@ def analyse(r, name, relative_to=None):
     if "check" in scheme:
         print(f"{name} checks:"); scheme["check"](r)
 
-    # 2. a scale: averaged over starts, optionally minus the panel with relative_to's values
+    # 2. a scale: averaged over starts, optionally minus the panel with relative_to's values, or the
+    #    grid point with point's values
     if scheme["kind"] == "scale":
         averaged = average_over_starts(values)
-        if relative_to:
+        if point:
+            suffix = "-".join(f"{k}{v:g}" for k, v in point.items())
+            plots.plot_scale(relative_point(averaged, r, point), r, scheme,
+                             f"{name}, averaged over starts, minus at {describe(point)} in each panel - {r['tag']}",
+                             f"{base}_relpt-{suffix}.png", relative_to=describe(point), point=point)
+        elif relative_to:
             suffix = "-".join(f"{k}{v:g}" for k, v in relative_to.items())
             plots.plot_scale(relative(averaged, r, relative_to), r, scheme,
                              f"{name}, averaged over starts, minus at {describe(relative_to)} - {r['tag']}",
@@ -117,8 +140,8 @@ def analyse(r, name, relative_to=None):
         else:
             plots.plot_scale(averaged, r, scheme, f"{name}, averaged over starts - {r['tag']}", f"{base}.png")
         return
-    if relative_to:
-        print(f"(--relative-to applies to scale schemes only; {name} is plotted as usual)")
+    if relative_to or point:
+        print(f"(--relative-to and --relative-to-point apply to scale schemes only; {name} is plotted as usual)")
 
     # 3. categories: grid labels, and a filtered version with rare labels replaced
     labels_raw = schemes.grid_labels(values)                  # (panel a, panel b, row, column)
@@ -196,6 +219,9 @@ if __name__ == "__main__":
     parser.add_argument("--compare", metavar="OTHER", help="another results file on the same grid to compare with")
     parser.add_argument("--relative-to", metavar="NAME=V[,NAME=V]",
                         help="scale schemes: plot each panel minus the panel with these values, e.g. p=1,q=1")
+    parser.add_argument("--relative-to-point", metavar="NAME=V,NAME=V",
+                        help="scale schemes: plot each grid point minus the grid point with these values, "
+                             "in the same panel, e.g. p=1,q=1 on a (p, q) grid")
     parser.add_argument("--summary", action="store_true", help="fraction of each panel meeting each SUMMARIES condition")
     parser.add_argument("--starts", nargs="+", type=int, metavar="I",
                         help="analyse only the runs from these starts (indices into the results' starts), e.g. 0 3")
@@ -206,6 +232,9 @@ if __name__ == "__main__":
     if args.starts:
         r = keep_starts(r, args.starts)
     relative_to = parse_values(args.relative_to) if args.relative_to else None
+    point = parse_values(args.relative_to_point) if args.relative_to_point else None
+    if relative_to and point:
+        raise SystemExit("give --relative-to or --relative-to-point, not both")
     names = args.scheme or ([] if args.cut is not None or args.summary else default_schemes(r))
     if args.cut is not None:
         plots.plot_cut(r, args.cut)
@@ -220,4 +249,4 @@ if __name__ == "__main__":
     else:
         for name in names:
             print(f"\n---------- {name} ----------")
-            analyse(r, name, relative_to)
+            analyse(r, name, relative_to, point)

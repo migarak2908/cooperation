@@ -4,7 +4,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap
+from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
@@ -12,6 +12,8 @@ from coop import references
 from coop.schemes import counted_groups, invested_threshold
 
 OTHER_COLOUR = "#9e9e9e"
+# differences from a grid point: teal negative, white 0, orange positive (red and blue mean the goods)
+TEAL_ORANGE = LinearSegmentedColormap.from_list("teal_orange", ["#0F7B7B", "#FFFFFF", "#E07B00"])
 
 
 def save(fig, filename):
@@ -120,15 +122,16 @@ def plot_side_by_side(left, right, r, scheme, titles, filename):
     save(fig, filename)
 
 
-def plot_scale(values, r, scheme, title, filename, relative_to=None):
-    # relative_to: a description of the reference panel (e.g. "p = 1, q = 1") when values are
-    # differences from it; then a diverging colour map centred on 0 with symmetric limits
+def plot_scale(values, r, scheme, title, filename, relative_to=None, point=None):
+    # relative_to: a description of the reference (e.g. "p = 1, q = 1") when values are differences
+    # from it; then a diverging colour map centred on 0 with symmetric limits. point: the reference is
+    # this grid point ({grid parameter: value}) in each panel: teal-orange, and a cross marks it
     label = scheme.get("label", "").format(scale=references.investment_scale(r)[1])
     cmap = None
     if relative_to:
         largest = np.nanmax(np.abs(values)) if np.isfinite(values).any() else 0.0
         vmin, vmax = -(largest or 1.0), largest or 1.0
-        cmap, label = "RdBu_r", f"{label}, minus at {relative_to}"
+        cmap, label = TEAL_ORANGE if point else "RdBu_r", f"{label}, minus at {relative_to}"
     else:
         vmin, vmax = scheme["range"](r) if callable(scheme.get("range")) else scheme.get("range", (None, None))
     cmap = plt.get_cmap(cmap).copy()
@@ -139,6 +142,9 @@ def plot_scale(values, r, scheme, title, filename, relative_to=None):
         im = ax.imshow(values[i, j], origin="lower", extent=extent(r), aspect="auto",
                        interpolation="nearest", vmin=vmin, vmax=vmax, cmap=cmap)
         draw_reference(ax, r)
+        if point:
+            (y, x) = r["grid_names"]
+            ax.plot(point[x], point[y], marker="x", color="black", markersize=6, markeredgewidth=1.5)
     fig.suptitle(title, fontsize=11)
     fig.colorbar(im, ax=axes, label=label)
     if reference_handles(r):

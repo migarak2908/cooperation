@@ -75,6 +75,9 @@ Each run starts from one of four corners, `(lo, lo)`, `(lo, hi)`, `(hi, lo)`, `(
 grid point is run four times. With `--start-nudge N` the two balanced corners become `(lo, lo + N)`
 and `(hi - N, hi)`: a group investing exactly equally in both goods can never begin to lean towards
 one (`--start-jitter` doesn't guarantee this, as it can clip a low start back onto the diagonal).
+`--start X1,X2` (repeatable) replaces the four corners with the given start(s) at every grid point,
+e.g. `--start 0.11,0.05`. The starts are added to the file name (`_start-0.11-0.05`) and recorded in
+the results file, so `run_analysis.py --starts` indexes them (0, 1, ... in the order given).
 
 ### Model options (quadratic only)
 
@@ -98,7 +101,7 @@ choices reproduce a reference implementation, for comparison.
 
 ### Settings
 
-`--x-max`, `--x-min`, `--max-dt`, `--max-steps`, `--tol`, `--start-nudge` and `--x64` override the settings for one
+`--x-max`, `--x-min`, `--max-dt`, `--max-steps`, `--tol`, `--start-nudge`, `--start` and `--x64` override the settings for one
 run. Everything else (time step, chunk size, batch sizes, split and merge distances, …) is in
 `Settings` in `coop/engine.py`. Priority, lowest first: `Settings` defaults → the model's defaults →
 the sweep's → the command line.
@@ -161,6 +164,7 @@ A scale scheme gives one figure, `<scheme>_<tag>.png`, averaged over starts.
 | `--cut VALUE` | for the grid column nearest VALUE (e.g. p = 0.7 on the `p_q` sweep): every group as a dot at (grid row value, lean), lean = (x1 − x2)/(x1 + x2), area ~ share, one row of panels per start. Runs no scheme unless `--scheme` is given |
 | `--compare OTHER.npz` | the two files' unfiltered labels side by side with one legend, and where they differ: in total, per panel, and the 5 most common changes. Both files need the same sweep, `n` and starts |
 | `--relative-to NAME=V[,NAME=V]` | scale schemes: each panel minus the panel with these values at the same grid point (after averaging over starts), on a blue-red scale centred on 0; e.g. `p=1,q=1`. A parameter left out keeps each panel's own value. Adds `_rel-p1-q1` to the figure name |
+| `--relative-to-point NAME=V,NAME=V` | scale schemes: each grid point minus the grid point with these grid-parameter values in the same panel (after averaging over starts), e.g. `p=1,q=1` on a (p, q) grid. Both grid parameters are needed, and the grid must have exactly those values (else it stops and lists them). Diverging teal (negative), white (0), orange (positive) scale with symmetric limits; red and blue are kept for the goods. A black cross marks the reference point. Adds `_relpt-p1-q1` to the figure name. Not with `--relative-to` |
 | `--summary` | one figure, `summary_<tag>.png`, with a small grid per condition in `SUMMARIES` (`coop/schemes.py`): the panel parameters on the axes, each cell the fraction of that panel's grid points meeting the condition (q = p and q = (p + 1)/2 drawn when the panels are p and q); the same numbers printed as a table. A condition relative to a panel the sweep doesn't have (e.g. p = 1, q = 1 on a (p, q) grid) is skipped with a note. Runs no scheme unless `--scheme` is given |
 | `--starts I [I ...]` | use only the runs from these starts (indices into the results' starts: 0 = (lo, lo + nudge), 1 = (lo, hi), 2 = (hi, lo), 3 = (hi − nudge, hi)) for everything: scales, labels, `--relative-to`, `--summary`, `--cut`, `--compare`. E.g. `--starts 0 3` keeps the two balanced starts, so a lean comes from selection, not from the start. Adds `_starts-0-3` to the figure names; the simulation is unchanged |
 

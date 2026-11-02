@@ -37,6 +37,7 @@ class Settings:
     lo: float = None                 # starts: the four corners of (lo, hi) in both goods;
     hi: float = None                 # None: 0.5% and 99.5% of x_max
     start_nudge: float = 0.0         # moved off the diagonal: (lo, lo + nudge) and (hi - nudge, hi)
+    start: tuple = ()                # given starts ((x1, x2), ...): replace the four corners
     # time stepping and stopping
     time_step: float = 0.01          # starting time step (halved while a run is cycling)
     min_dt: float = 1e-5
@@ -67,6 +68,8 @@ class Settings:
 
     @property
     def starts(self):
+        if self.start:
+            return [tuple(x) for x in self.start]
         lo = 0.005 * self.x_max if self.lo is None else self.lo
         hi = 0.995 * self.x_max if self.hi is None else self.hi
         # the balanced corners are nudged off the diagonal: a group investing exactly equally in both

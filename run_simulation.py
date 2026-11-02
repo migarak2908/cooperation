@@ -11,6 +11,7 @@
 #         python run_simulation.py --model exp --sweep p_q --n 20
 #         python run_simulation.py --model exp --sweep p_q --values beta=0.3,0.5    (other panel values)
 #         python run_simulation.py --model quadratic --sweep p_q_quadratic --n 20
+#         python run_simulation.py --model quadratic --sweep p_q_near_one --start 0.11,0.05   (one start)
 #         python run_simulation.py --model quadratic --benefit individual_sum --hessian silas \
 #                                  --split-mode forced_once --stop fixed_time --start-jitter
 #         in Colab: %run run_simulation.py --model quadratic --n 10
@@ -36,7 +37,10 @@ def settings_for(model, sweep, **changes):
 def make_tag(model, sweep, s, n, base):
     # model (with its options), sweep (with any panel values changed from the command line), grid size,
     # x_max, and every setting changed from the command line
-    short = lambda k, v: k if v is True else f"{k}{v:g}" if isinstance(v, float) else f"{k}-{v}"
+    def short(k, v):
+        if k == "start":                                # e.g. start-0.11-0.05
+            return "start-" + "-".join(f"{x:g}" for xs in v for x in xs)
+        return k if v is True else f"{k}{v:g}" if isinstance(v, float) else f"{k}-{v}"
     changed = [short(k, v) for k, v in asdict(s).items() if k != "x_max" and v != getattr(base, k)]
     return "_".join([model.tag, sweep.name] + sweeps.changed_values(sweep) + [f"n{n}", f"xmax{s.x_max:g}"] + changed)
 
@@ -121,7 +125,11 @@ if __name__ == "__main__":
     for name in ["x_max", "x_min", "max_dt", "max_steps", "tol", "start_nudge"]:
         engine_options.add_argument("--" + name.replace("_", "-"), type=int if name == "max_steps" else float)
     engine_options.add_argument("--x64", action="store_true", default=None, help="64-bit floats")
+    engine_options.add_argument("--start", action="append", metavar="X1,X2",
+                                help="start every grid point here instead of the four corners (repeatable)")
     args = vars(parser.parse_args())
+    if args["start"]:
+        args["start"] = tuple(tuple(float(v) for v in item.split(",")) for item in args["start"])
 
     # 1. the model, the sweep and the settings
     model = models.make_model(args["model"], **{k: args[k] for k in models.OPTIONS if args[k] is not None})
