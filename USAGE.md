@@ -157,6 +157,7 @@ A scale scheme gives one figure, `<scheme>_<tag>.png`, averaged over starts.
 | `--compare OTHER.npz` | the two files' unfiltered labels side by side with one legend, and where they differ: in total, per panel, and the 5 most common changes. Both files need the same sweep, `n` and starts |
 | `--relative-to NAME=V[,NAME=V]` | scale schemes: each panel minus the panel with these values at the same grid point (after averaging over starts), on a blue-red scale centred on 0; e.g. `p=1,q=1`. A parameter left out keeps each panel's own value. Adds `_rel-p1-q1` to the figure name |
 | `--summary` | one figure, `summary_<tag>.png`, with a small grid per condition in `SUMMARIES` (`coop/schemes.py`): the panel parameters on the axes, each cell the fraction of that panel's grid points meeting the condition (q = p and q = (p + 1)/2 drawn when the panels are p and q); the same numbers printed as a table. Runs no scheme unless `--scheme` is given |
+| `--starts I [I ...]` | use only the runs from these starts (indices into the results' starts: 0 = (lo, lo + nudge), 1 = (lo, hi), 2 = (hi, lo), 3 = (hi − nudge, hi)) for everything: scales, labels, `--relative-to`, `--summary`, `--cut`, `--compare`. E.g. `--starts 0 3` keeps the two balanced starts, so a lean comes from selection, not from the start. Adds `_starts-0-3` to the figure names; the simulation is unchanged |
 
 The `SUMMARIES` conditions (values averaged over starts first):
 

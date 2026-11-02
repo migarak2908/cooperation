@@ -9,6 +9,7 @@
 #         python run_analysis.py RESULTS.npz --compare OTHER.npz   (side by side, and where labels differ)
 #         python run_analysis.py RESULTS.npz --scheme mean_investment --relative-to p=1,q=1   (minus that panel)
 #         python run_analysis.py RESULTS.npz --summary             (fraction of each panel meeting SUMMARIES)
+#         python run_analysis.py RESULTS.npz --starts 0 3          (only the runs from starts 0 and 3)
 #         in Colab: %run run_analysis.py RESULTS.npz
 
 import argparse
@@ -48,6 +49,22 @@ def parse_values(text):
 
 def describe(values):
     return ", ".join(f"{name} = {v:g}" for name, v in values.items())
+
+
+def keep_starts(r, indices):
+    # r with only the runs from these starts (indices into r["starts"]); every array's first axis is the
+    # start, so all analysis then uses just them; adds "_starts-0-3" to the tag, so to every figure name
+    n = len(r["starts"])
+    if not indices or any(not 0 <= s < n for s in indices):
+        raise SystemExit(f"--starts: indices 0 to {n - 1}, one per start: "
+                         + ", ".join(f"{s} = ({a:g}, {b:g})" for s, (a, b) in enumerate(r["starts"])))
+    for k, v in r.items():
+        if isinstance(v, np.ndarray) and v.ndim and v.shape[0] == n and k != "grid_axes":
+            r[k] = v[indices]
+    r["starts"] = [r["starts"][s] for s in indices]
+    r["tag"] += "_starts-" + "-".join(str(s) for s in indices)
+    print("using starts " + ", ".join(f"{s} = ({a:g}, {b:g})" for s, (a, b) in zip(indices, r["starts"])))
+    return r
 
 
 def relative(values, r, reference):
@@ -167,10 +184,14 @@ if __name__ == "__main__":
     parser.add_argument("--relative-to", metavar="NAME=V[,NAME=V]",
                         help="scale schemes: plot each panel minus the panel with these values, e.g. p=1,q=1")
     parser.add_argument("--summary", action="store_true", help="fraction of each panel meeting each SUMMARIES condition")
+    parser.add_argument("--starts", nargs="+", type=int, metavar="I",
+                        help="analyse only the runs from these starts (indices into the results' starts), e.g. 0 3")
     args = parser.parse_args()
 
     r = results.load(args.results)
     r["invested_rule"] = args.invested
+    if args.starts:
+        r = keep_starts(r, args.starts)
     relative_to = parse_values(args.relative_to) if args.relative_to else None
     names = args.scheme or ([] if args.cut is not None or args.summary else default_schemes(r))
     if args.cut is not None:
@@ -180,6 +201,8 @@ if __name__ == "__main__":
     if args.compare:
         other = results.load(args.compare)
         other["invested_rule"] = args.invested
+        if args.starts:
+            other = keep_starts(other, args.starts)
         compare_results(r, other, (names or default_schemes(r))[0])
     else:
         for name in names:
