@@ -142,20 +142,25 @@ def analyse(r, name, relative_to=None):
 def summarise(r):
     # for each SUMMARIES entry, the fraction of each panel's grid points meeting its condition;
     # printed as a table (rows panels, columns entries) and saved as one figure
+    # entries relative to a panel this sweep doesn't have (e.g. p = q = 1 on a (p, q) grid) are skipped
+    entries = [e for e in SUMMARIES if not e[2] or set(e[2]) <= set(r["panel_names"])]
+    for title, _, relative_to, *_ in [e for e in SUMMARIES if e not in entries]:
+        print(f"summary: {title!r} skipped: relative to {describe(relative_to)}, "
+              f"but the panel parameters are {', '.join(r['panel_names'])}")
     fractions = []
-    for title, name, relative_to, comparison, threshold in SUMMARIES:
+    for title, name, relative_to, comparison, threshold in entries:
         values = average_over_starts(SCHEMES[name]["outcome"](r["xs"], r["fs"], r))   # (panel a, panel b, row, column)
         if relative_to:
             values = relative(values, r, {k: float(v) for k, v in relative_to.items()})
         with np.errstate(invalid="ignore"):                                     # NaN: not met
             met = {"abs>": np.abs(values) > threshold, ">": values > threshold, "<": values < threshold}[comparison]
         fractions.append(met.mean(axis=(-2, -1)))
-    width = max(len(t) for t, *_ in SUMMARIES)
+    width = max(len(t) for t, *_ in entries)
     print("\nsummary: fraction of each panel's grid points meeting each condition")
-    print(" " * 22 + "".join(f"{t:>{width + 2}s}" for t, *_ in SUMMARIES))
+    print(" " * 22 + "".join(f"{t:>{width + 2}s}" for t, *_ in entries))
     for (i, j), panel in panel_names(r).items():
         print(f"{panel:22s}" + "".join(f"{f[i, j]:>{width + 2}.2f}" for f in fractions))
-    plots.plot_summary(fractions, SUMMARIES, r, f"summary_{r['tag']}.png")
+    plots.plot_summary(fractions, entries, r, f"summary_{r['tag']}.png")
 
 
 def compare_results(r, other, name):
