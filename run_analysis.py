@@ -14,6 +14,7 @@
 
 import argparse
 from collections import Counter
+import warnings
 import numpy as np
 
 from coop import plots, references, results, schemes
@@ -49,6 +50,13 @@ def parse_values(text):
 
 def describe(values):
     return ", ".join(f"{name} = {v:g}" for name, v in values.items())
+
+
+def average_over_starts(values):
+    # NaN only where every start is NaN (e.g. nobody invests from any start)
+    with np.errstate(invalid="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)                 # "Mean of empty slice"
+        return np.nanmean(values, axis=0)
 
 
 def keep_starts(r, indices):
@@ -100,7 +108,7 @@ def analyse(r, name, relative_to=None):
 
     # 2. a scale: averaged over starts, optionally minus the panel with relative_to's values
     if scheme["kind"] == "scale":
-        averaged = values.mean(axis=0)
+        averaged = average_over_starts(values)
         if relative_to:
             suffix = "-".join(f"{k}{v:g}" for k, v in relative_to.items())
             plots.plot_scale(relative(averaged, r, relative_to), r, scheme,
@@ -136,7 +144,7 @@ def summarise(r):
     # printed as a table (rows panels, columns entries) and saved as one figure
     fractions = []
     for title, name, relative_to, comparison, threshold in SUMMARIES:
-        values = SCHEMES[name]["outcome"](r["xs"], r["fs"], r).mean(axis=0)     # (panel a, panel b, row, column)
+        values = average_over_starts(SCHEMES[name]["outcome"](r["xs"], r["fs"], r))   # (panel a, panel b, row, column)
         if relative_to:
             values = relative(values, r, {k: float(v) for k, v in relative_to.items()})
         with np.errstate(invalid="ignore"):                                     # NaN: not met

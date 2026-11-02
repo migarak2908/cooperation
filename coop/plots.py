@@ -131,6 +131,8 @@ def plot_scale(values, r, scheme, title, filename, relative_to=None):
         cmap, label = "RdBu_r", f"{label}, minus at {relative_to}"
     else:
         vmin, vmax = scheme["range"](r) if callable(scheme.get("range")) else scheme.get("range", (None, None))
+    cmap = plt.get_cmap(cmap).copy()
+    cmap.set_bad("lightgrey")                                           # NaN: no value (e.g. nobody invests)
     fig = plt.figure(figsize=figure_size(r))
     axes, each = panel_axes(fig, r)
     for ax, i, j in each:

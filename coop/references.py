@@ -121,22 +121,32 @@ def compare_division(labels, r):
     return compare(labels, r, division=True)
 
 
-def compare_one_good(labels, r):
+def compare_dhk(labels, r):
+    # dhk_type labels: only the p = q = 1 one-good comparison, with its regions given DHK names
+    if set(r["panel_names"]) == {"p", "q"} and panel_index(r, p=1.0, q=1.0) is not None:
+        (compare_one_good_exp if r["model"] == "exp" else compare_one_good)(labels, r, dhk=True)
+    else:
+        print("no analytic prediction for dhk_type on this sweep (needs p and q as panels, including p = q = 1)")
+
+
+def compare_one_good(labels, r, dhk=False):
     # quadratic, p = q = 1: reduces to the one-good model; compare with its analytic diagram
+    # (with dhk, in dhk_type's names: the interior singular point is "ESS" wherever it is)
     y_axis, x_axis = r["grid_axes"]
     B1, B2 = np.meshgrid(x_axis, y_axis)
     x_max = r["x_max"]
     D0, Dmax = B1 - 1, (B1 - 1) + (2 - 4 * B2) * x_max
     with np.errstate(divide="ignore", invalid="ignore"):
         xs = D0 / (4 * B2 - 2)
+    names = (["full cooperation", "defection", "defection |or| full cooperation", "branching", "ESS"] if dhk
+             else ["CC", "DD", "CC |or| DD", "CC and DD", np.where(xs > x_max / 2, "CC", "DD")])
     analytic = np.select([(D0 > 0) & (Dmax > 0), (D0 < 0) & (Dmax < 0), (D0 < 0) & (Dmax > 0),
                           (D0 > 0) & (Dmax < 0) & (B2 < 1), (D0 > 0) & (Dmax < 0) & (B2 > 1)],
-                         ["CC", "DD", "CC |or| DD", "CC and DD", np.where(xs > x_max / 2, "CC", "DD")],
-                         default="boundary")
+                         names, default="boundary")
     print_comparison(analytic, labels, r)
 
 
-def compare_one_good_exp(labels, r):
+def compare_one_good_exp(labels, r, dhk=False):
     # exponential, p = q = 1 (one group per run, b = b', beta = beta'):
     #   b > beta, beta < 1:      ESS at x*;  b > beta, 1 < beta < 2: branching;  b > beta, beta > 2: up to the wall
     #   b < beta, beta < 2:      no investment;  b < beta, beta > 2: bistable
@@ -145,9 +155,11 @@ def compare_one_good_exp(labels, r):
     B, BETA = np.meshgrid(x_axis, y_axis)
     i, j = panel_index(r, p=1.0, q=1.0)
     ess = np.where(x_star(r)[i, j] > invested_threshold(r), "CC", "DD")
+    names = (["ESS", "branching", "full cooperation", "defection", "defection |or| full cooperation"] if dhk
+             else [ess, "CC and DD", "CC", "DD", "CC |or| DD"])
     analytic = np.select([(B > BETA) & (BETA < 1), (B > BETA) & (BETA > 1) & (BETA < 2), (B > BETA) & (BETA > 2),
                           (B < BETA) & (BETA < 2), (B < BETA) & (BETA > 2)],
-                         [ess, "CC and DD", "CC", "DD", "CC |or| DD"], default="boundary")
+                         names, default="boundary")
     print_comparison(analytic, labels, r)
 
 

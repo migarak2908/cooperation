@@ -132,6 +132,10 @@ With no file it uses the newest `results_*.npz` in the folder.
 | `individual` | scale | 0 to 1: how lopsided individuals are, `sum f_i \|x1_i - x2_i\| / sum f_i t_i`; 0 = everyone invests equally in both goods, 1 = everyone in one good only |
 | `population` | scale | 0 to 1: how lopsided the population is as a whole, `\|sum f_i (x1_i - x2_i)\| / sum f_i t_i`; 0 = the goods are balanced overall |
 | `total_spread` | scale | 0 to 0.5: spread of total investment `t_i = x1_i + x2_i` between groups, `sqrt(sum f_i (t_i - sum f_j t_j)^2)`, divided by twice the mean-investment scale; 0.5 = half invest nothing and half the scale in both goods |
+| `not_converged` | scale | 0 to 1: the fraction of starts that stopped at `max_steps` without converging |
+| `dhk_type` | categories | by structure, not by the half-cap threshold. With each group's total `t_i = x1_i + x2_i` and top = `2 x_max`: `branching` if two groups' totals differ by more than 0.05 top; else, with the share-weighted mean total m, `defection` (m < 0.01 top), `full cooperation` (m > 0.99 top) or `ESS`. `defection \|or\| full cooperation` is the repeller (bistable). Compared with the one-good diagram at p = q = 1 |
+
+`individual`, `population` and `division_of_labour_index` are NaN (light grey) where nobody invests: a share-weighted total `sum f_i t_i` below 1% of twice the scale (this also covers runs sitting near `x_min`). Averages over starts ignore NaN, so a grid point is NaN only if every start is; in `--summary` NaN counts as not met.
 
 Default: `cc_dc_dd_division` on a (p, q) grid (`p_q`, `p_q_quadratic`), `cc_dc_dd` otherwise. Several at once: `--scheme cc_dc_dd mean_investment`.
 

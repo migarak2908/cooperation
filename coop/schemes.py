@@ -140,7 +140,8 @@ def mean_investment(xs, fs, r):
 #   population = |sum f_i d_i| / sum f_i t_i      how lopsided the population is as a whole
 #   division_of_labour_index = individual - population
 #                                                 0 to 1; 1 = groups specialise in opposite goods
-# All three are 0 where nobody invests.
+# All three are NaN where nobody invests (nobody_invests): there the split is noise, not "balanced".
+NOBODY_INVESTS = 0.01                # share-weighted total below 1% of 2 * investment_scale
 
 def lopsidedness(xs, fs, r):
     xs, fs, counted = counted_groups(xs, fs, r)
@@ -153,32 +154,45 @@ def lopsidedness(xs, fs, r):
     return individual, population, total
 
 
+def nobody_invests(total, r):
+    # share-weighted total below NOBODY_INVESTS of 2 * investment_scale (also catches runs sitting near
+    # x_min); a NaN scale (no x*) falls back to a total of about 0
+    with np.errstate(invalid="ignore"):
+        return (total < 1e-9) | (total < NOBODY_INVESTS * 2 * references.investment_scale(r)[0])
+
+
 def individual(xs, fs, r):
     individual, _, total = lopsidedness(xs, fs, r)
-    return np.where(total < 1e-9, 0.0, individual)
+    return np.where(nobody_invests(total, r), np.nan, individual)
 
 
 def population(xs, fs, r):
     _, population, total = lopsidedness(xs, fs, r)
-    return np.where(total < 1e-9, 0.0, population)
+    return np.where(nobody_invests(total, r), np.nan, population)
 
 
 def division_of_labour_index(xs, fs, r):
     individual, population, total = lopsidedness(xs, fs, r)
-    return np.where(total < 1e-9, 0.0, individual - population)
+    return np.where(nobody_invests(total, r), np.nan, individual - population)
+
+
+def first(value):
+    # a hand-made check case's value; the scale may differ per panel (x*), so take the first panel's
+    return float(np.ravel(value)[0])
 
 
 def check_lopsidedness(r):
     def values(groups, shares):
         xs = np.zeros((4, 2)); fs = np.zeros(4)
         xs[:len(groups)], fs[:len(shares)] = groups, shares
-        return float(individual(xs, fs, r)), float(population(xs, fs, r))
+        return first(individual(xs, fs, r)), first(population(xs, fs, r))
     cases = [
         ("one group at (1, 0)",                          values([(1, 0)], [1.0]),                  (1.0, 1.0)),
         ("groups at (1, 0) and (0, 1), shares 0.5 each", values([(1, 0), (0, 1)], [0.5, 0.5]),     (1.0, 0.0)),
+        ("one group at (0, 0): nobody invests",          values([(0, 0)], [1.0]),                  (np.nan, np.nan)),
     ]
     for name, got, expected in cases:
-        ok = np.allclose(got, expected, rtol=0, atol=1e-9)
+        ok = np.allclose(got, expected, rtol=0, atol=1e-9, equal_nan=True)
         print(f"  {'ok' if ok else 'FAILED':6s} {name:50s} -> individual {got[0]:g}, population {got[1]:g} "
               f"(expected {expected[0]:g}, {expected[1]:g})")
         assert ok
@@ -188,16 +202,18 @@ def check_division_of_labour_index(r):
     def score(groups, shares):
         xs = np.zeros((4, 2)); fs = np.zeros(4)
         xs[:len(groups)], fs[:len(shares)] = groups, shares
-        return float(division_of_labour_index(xs, fs, r))
+        return first(division_of_labour_index(xs, fs, r))
+    same = lambda got, expected: abs(got - expected) < 1e-9 or (np.isnan(got) and np.isnan(expected))
     cases = [
         ("one group at (1, 1)",                              score([(1, 1)], [1.0]),                                  0.0),
         ("one group at (1, 0)",                              score([(1, 0)], [1.0]),                                  0.0),
         ("groups at (1, 0) and (0, 1), shares 0.5 each",     score([(1, 0), (0, 1)], [0.5, 0.5]),                     1.0),
         ("(1, 0), (0, 1), (0.5, 0.5), shares 0.4, 0.4, 0.2", score([(1, 0), (0, 1), (0.5, 0.5)], [0.4, 0.4, 0.2]),    0.8),
+        ("one group at (0, 0): nobody invests",              score([(0, 0)], [1.0]),                                  np.nan),
     ]
     for name, got, expected in cases:
-        print(f"  {'ok' if abs(got - expected) < 1e-9 else 'FAILED':6s} {name:50s} -> {got:g} (expected {expected:g})")
-        assert abs(got - expected) < 1e-9
+        print(f"  {'ok' if same(got, expected) else 'FAILED':6s} {name:50s} -> {got:g} (expected {expected:g})")
+        assert same(got, expected)
 
 
 # ---------- scheme: spread of total investment between groups (a sliding scale) ----------
@@ -229,6 +245,64 @@ def check_total_spread(r):
     assert abs(got - 0.5) < 1e-9
 
 
+# ---------- scheme: not converged (a sliding scale) ----------
+
+def not_converged(xs, fs, r):
+    # 1 for a run that stopped at max_steps without converging, else 0; averaged over starts, the
+    # fraction of starts not converged. r["status"] is laid out like xs without its last two axes
+    return (r["status"] == 2).astype(float)
+
+
+# ---------- scheme: DHK types (by structure, not by the half-cap threshold) ----------
+# With each counted group's total t_i = x1_i + x2_i and top = 2 x_max:
+#   branching:         two counted groups' totals differ by more than DHK_BRANCH * top
+#   otherwise, with the share-weighted mean total m:
+#   defection:         m < DHK_EDGE * top;  full cooperation: m > (1 - DHK_EDGE) * top;  else ESS
+DHK_BRANCH = 0.05
+DHK_EDGE = 0.01
+DHK_LABELS = ["defection", "ESS", "full cooperation", "branching", "defection |or| full cooperation"]
+
+
+def dhk_type(xs, fs, r):
+    xs, fs, counted = counted_groups(xs, fs, r)
+    top = 2 * r["x_max"]
+    t = xs[..., 0] + xs[..., 1]
+    hi = np.max(np.where(counted, t, -np.inf), axis=-1)
+    lo = np.min(np.where(counted, t, np.inf), axis=-1)
+    f = np.where(counted, fs, 0.0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        m = np.sum(f * t, axis=-1) / np.sum(f, axis=-1)
+    return np.select([hi - lo > DHK_BRANCH * top, m < DHK_EDGE * top, m > (1 - DHK_EDGE) * top],
+                     ["branching", "defection", "full cooperation"], default="ESS").astype(object)
+
+
+def dhk_colours(present):
+    # defection red, ESS green, full cooperation blue, branching purple, the repeller orange
+    return list(DHK_LABELS), ["#d62728", "#2ca02c", "#1f77b4", "#9467bd", "#ff7f0e"]
+
+
+def check_dhk_type(r):
+    m = r["x_max"]
+    def outcome(groups, shares):
+        xs = np.zeros((4, 2)); fs = np.zeros(4)
+        xs[:len(groups)], fs[:len(shares)] = groups, shares
+        return str(dhk_type(xs, fs, r))
+    cases = [
+        ("one group at (0, 0)",                           outcome([(0, 0)], [1.0]),                         "defection"),
+        (f"one group at ({m:g}, {m:g})",                  outcome([(m, m)], [1.0]),                         "full cooperation"),
+        (f"one group at ({m / 2:g}, 0)",                  outcome([(m / 2, 0)], [1.0]),                     "ESS"),
+        (f"groups at ({m:g}, 0) and (0, {m:g})",          outcome([(m, 0), (0, m)], [0.5, 0.5]),            "ESS"),
+        (f"groups at ({m:g}, {m:g}) and (0, 0)",          outcome([(m, m), (0, 0)], [0.5, 0.5]),            "branching"),
+        (f"({m:g}, {m:g}) share 0.995 + (0, 0) share 0.005", outcome([(m, m), (0, 0)], [0.995, 0.005]),     "full cooperation"),
+    ]
+    for name, got, expected in cases:
+        print(f"  {'ok' if got == expected else 'FAILED':6s} {name:46s} -> {got!r}")
+        assert got == expected
+    got = grid_labels(np.array([["full cooperation"], ["defection"]], dtype=object))[0]
+    print(f"  {'ok' if got == DHK_LABELS[-1] else 'FAILED':6s} {'grid label from full cooperation, defection':46s} -> {got!r}")
+    assert got == DHK_LABELS[-1]
+
+
 # ---------- schemes ----------
 # kind: "categories" or "scale". Optional: check (run first), and for categories colours (a fixed
 # legend) and compare (run on the unfiltered grid labels: the model's analytic prediction); for a
@@ -249,6 +323,10 @@ SCHEMES = {
                               label="population lopsidedness (0 = goods balanced overall, 1 = one good only)"),
     "total_spread":      dict(kind="scale", outcome=total_spread, check=check_total_spread, range=(0, 0.5),
                               label="spread of total investment between groups / (2 {scale})"),
+    "not_converged":     dict(kind="scale", outcome=not_converged, range=(0, 1),
+                              label="fraction of starts not converged"),
+    "dhk_type":          dict(kind="categories", outcome=dhk_type, colours=dhk_colours,
+                              check=check_dhk_type, compare=references.compare_dhk),
 }
 
 
