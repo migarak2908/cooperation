@@ -1,11 +1,12 @@
 # How the population evolves over time for a few (p, q) conditions, in the style of DHK's Fig. 1 time
 # panels. Runs are recorded after every chunk and held at their final state up to a common end time
-# (the longest run's finishing time by default). Two figures, each from its own runs:
+# (the longest run's finishing time by default). Three figures:
 #   trajectories_time_<tag>.png:   one run per condition, from --start; the split x1 - x2 against time
 #                                  (linear to 1, log after) per condition, with the totals shared or as strips
+#   trajectories_goods_<tag>.png:  the same runs: each group's x1 (blue) and x2 (red) against time
 #   trajectories_plane_<tag>.png:  each condition's runs (its own plane starts), as paths in the
 #                                  (x1, x2) plane
-# and the recorded data of each as a .npz next to it. Lines are coloured by lean, as wide as the
+# and the recorded data of the time and plane runs as a .npz next to their figures. Lines are coloured by lean, as wide as the
 # group's share, and a black diamond marks each split. See USAGE.md.
 #
 # Usage:  python run_trajectories.py                       (totals shared)
@@ -22,7 +23,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from matplotlib.cm import ScalarMappable
-from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from matplotlib.lines import Line2D
 
 from coop import engine, models, plots, sweeps
@@ -53,6 +54,8 @@ ARROW_TIMES = [0.5, 2, 8, 32, 128]   # figure B: arrowheads where each group is 
 TOTAL_STYLES = ["-", "--", ":", "-.", (0, (5, 1, 1, 1, 1, 1)), (0, (1, 3))]   # figure A, shared totals
 LEAN = LinearSegmentedColormap.from_list("lean", ["#E24B4A", "#7F77DD", "#378ADD"])   # lean -1, 0, +1
 SPLIT_MARK = dict(marker="D", color="black", markersize=6, linestyle="none", zorder=5)
+GOOD_COLOURS, GOOD_ALPHA = ["#378ADD", "#E24B4A"], 0.55   # figure C: good 1 blue, good 2 red, translucent
+TIME_AXIS = dict(value="symlog", linthresh=1)             # time from 0: linear up to 1, logarithmic after
 
 
 def width(share):
@@ -183,10 +186,8 @@ def split_legend(fig, extra=()):
 # ---------- figure A: time panels ----------
 
 def plot_time(data, total, start, filename):
-    # time from 0: linear up to 1, logarithmic after
     runs = [rs[0] for rs in data]
     t_max = max(r["times"][-1] for r in runs)
-    time_axis = dict(value="symlog", linthresh=1)
     n, strips = len(runs), total == "strips"
     fig = plt.figure(figsize=(2.9 * n + 0.6, 6.5 if strips else 8.5))
     if strips:          # per condition: split, total (half as wide), gap
@@ -200,7 +201,7 @@ def plot_time(data, total, start, filename):
         ax = fig.add_subplot(grid[0, 3 * c] if strips else grid[0, c])
         draw(ax, r, lambda x, k: (x[0] - x[1], r["times"][k]))
         ax.axvline(0, color="black", linestyle="--", linewidth=0.6)
-        ax.set_yscale(**time_axis)
+        ax.set_yscale(**TIME_AXIS)
         ax.set(xlim=(-SPLIT_LIMIT, SPLIT_LIMIT), ylim=(0, t_max))
         ax.set_xlabel("split x1 - x2", fontsize=8)
         ax.set_ylabel("time" if c == 0 else "")
@@ -218,7 +219,7 @@ def plot_time(data, total, start, filename):
         for r, (pq, name, _), style in zip(runs, CONDITIONS, TOTAL_STYLES):
             ax.plot(r["times"], mean_total(r), linestyle=style, color="black", linewidth=1,
                     label=f"{name} (p = {pq[0]:g}, q = {pq[1]:g})")
-        ax.set_xscale(**time_axis)
+        ax.set_xscale(**TIME_AXIS)
         ax.set(xlim=(0, t_max), ylim=(min(mean_total(r)[0] for r in runs) - 0.01, None))
         ax.set_xlabel("time")
         ax.set_ylabel("total x1 + x2\n(share-weighted)", fontsize=8)
@@ -227,6 +228,43 @@ def plot_time(data, total, start, filename):
     split_legend(fig)
     fig.text(0.5, 0.01, f"All runs start towards good 1 (x1 − x2 = {start[0] - start[1]:g}). "
              "Time in model units, linear up to 1, log after.", ha="center", fontsize=9)
+    plots.save(fig, filename)
+
+
+# ---------- figure C: each good's investment against time ----------
+
+def plot_goods(data, filename):
+    # each group's x1 (blue) and x2 (red) as one translucent line per path, so where they overlap they
+    # blend to purple; a diamond on both lines at each split
+    runs = [rs[0] for rs in data]
+    t_max = max(r["times"][-1] for r in runs)
+    fig, axes = plt.subplots(1, len(runs), sharey=True, figsize=(2.6 * len(runs) + 0.6, 6))
+    fig.subplots_adjust(left=0.05, right=0.98, top=0.74, bottom=0.17, wspace=0.25)
+    for ax, r, (pq, name, _) in zip(axes, runs, CONDITIONS):
+        xs, fs, times = r["xs"], r["fs"], r["times"]
+        paths, splits = paths_and_splits(r)
+        for good, colour in enumerate(GOOD_COLOURS):
+            ax.add_collection(LineCollection([[(xs[k, i, good], times[k]) for k, i in path] for path in paths],
+                                             colors=colour, alpha=GOOD_ALPHA, capstyle="butt",
+                                             linewidths=[width(fs[path[-1]]) for path in paths]))
+            for k, parent, child in splits:
+                ax.plot((xs[k, parent, good] + xs[k, child, good]) / 2, times[k], **SPLIT_MARK)
+        ax.set_yscale(**TIME_AXIS)
+        ax.set(xlim=(0, 0.3), ylim=(0, t_max))
+        ax.set_xlabel("investment", fontsize=8)
+        ax.tick_params(labelsize=7)
+        ax.set_title(title(pq, name), fontsize=9)
+    axes[0].set_ylabel("time")
+
+    blend = np.array([1.0, 1.0, 1.0])               # the legend's purple: red over blue over white
+    for colour in GOOD_COLOURS:
+        blend = (1 - GOOD_ALPHA) * blend + GOOD_ALPHA * np.array(to_rgb(colour))
+    split_legend(fig, [Line2D([], [], color=c, alpha=GOOD_ALPHA, linewidth=2.5, label=l)
+                       for c, l in zip(GOOD_COLOURS, ["good 1", "good 2"])]
+                 + [Line2D([], [], color=blend, linewidth=2.5, label="overlap (purple)")])
+    fig.text(0.5, 0.02, "Each group's investment in good 1 (blue) and good 2 (red); purple where they overlap. "
+             "In division of labour, the purple lines are one group's good 1 overlapping the other group's good 2.",
+             ha="center", fontsize=9, wrap=True)
     plots.save(fig, filename)
 
 
@@ -297,6 +335,7 @@ if __name__ == "__main__":
     base = ["quadratic_flat", f"b1-{B1:.4g}", f"b2-{B2:g}", f"tol{SETTINGS['tol']:g}", f"chunk{SETTINGS['chunk']}"]
     end = [f"end{args.end_time:g}"] if args.end_time else []
     base += [f"p{p:g}-q{q:g}" for (p, q), *_ in CONDITIONS]
+    goods_tag = "_".join(base + [f"start-{start[0]:g}-{start[1]:g}"] + end)
     time_tag = "_".join(base + [f"start-{start[0]:g}-{start[1]:g}", f"total-{args.total}"] + end)
     plane_tag = "_".join(base + end)
     print("running on:", jax.devices())
@@ -304,6 +343,7 @@ if __name__ == "__main__":
     data = simulate([(pq, [start]) for pq, _, _ in CONDITIONS], args.end_time)
     save_data(data, CONDITIONS, f"trajectories_time_{time_tag}.npz")
     plot_time(data, args.total, start, f"trajectories_time_{time_tag}.png")
+    plot_goods(data, f"trajectories_goods_{goods_tag}.png")
     print_final(data, CONDITIONS)
 
     data = simulate([(pq, starts) for pq, _, starts in CONDITIONS], args.end_time)

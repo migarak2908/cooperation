@@ -194,7 +194,7 @@ The same works for any two runs on the same grid, e.g. with and without `--flat-
 
 ## run_trajectories.py
 
-How the population evolves over time for a few (p, q) conditions, in the style of DHK's Fig. 1 time panels.
+How the population evolves over time for a few (p, q) conditions, in the style of DHK's Fig. 1 time panels. Makes three figures.
 
 ```
 python run_trajectories.py [--start X1,X2] [--total shared|strips] [--end-time T]
@@ -215,6 +215,11 @@ python run_trajectories.py [--start X1,X2] [--total shared|strips] [--end-time T
 - Per column, a split panel: x1 − x2 from −0.3 to 0.3, with a dashed line at 0, time going up.
 - `--total shared` (default) adds one panel below all the columns, with every condition's share-weighted total overlaid in its own line style. Its y-axis starts just below the initial total.
 - `--total strips` instead puts a narrow grey total panel beside each split panel.
+
+**Figure C, `trajectories_goods_<tag>.png`:** the same runs as figure A, one panel per condition.
+- Each group's good-1 investment x1 (blue) and good-2 investment x2 (red), from 0 to 0.3, against the same time axis as figure A (time going up, from 0).
+- Both lines are translucent (alpha 0.55), so where they overlap they blend to purple. In division of labour, the purple lines are one group's good 1 overlapping the other group's good 2.
+- Diamonds mark the splits; the legend shows good 1, good 2, overlap and split.
 
 **Figure B, `trajectories_plane_<tag>.png`:** the same six conditions in two rows of three, each with its own starts, all with total 0.16.
 - Starts: towards good 1 (0.11, 0.05), balanced (0.08, 0.08), towards good 2 (0.05, 0.11). The balanced start is exactly on the diagonal; the engine's saddle push and split test take it off.
