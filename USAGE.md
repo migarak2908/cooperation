@@ -197,27 +197,30 @@ The same works for any two runs on the same grid, e.g. with and without `--flat-
 How the population evolves over time for a few (p, q) conditions, in the style of DHK's Fig. 1 time panels.
 
 ```
-python run_trajectories.py [--start X1,X2] [--total strips|shared] [--end-time T]
+python run_trajectories.py [--total strips|shared] [--end-time T]
 ```
 
 - Quadratic model with the flat benefit, `tol = 1e-5`, DHK's ESS point B converted: b1' = 7/4.6, b2' = 1.5.
 - Runs are recorded every 20 steps (0.2 time units) through `engine.simulate`'s `record` argument.
 - Each run is held at its final state up to a common end time, `--end-time` (default: the longest run's finishing time), so all lines reach the end.
 - Lean (x1 − x2)/(x1 + x2) is coloured red at −1, purple at 0 and blue at +1. Line width is proportional to share, and a split shows as a fork from the parent.
+- Every panel's third title line says which part of the division-of-labour rule its (p, q) satisfies: `neutral` (p = q = 1), `q > (p+1)/2` (generalists), `q < p` (specialists) or `p < q < (p+1)/2` (division of labour).
+- Balanced starts are exactly on the diagonal; the engine's saddle push and split test take them off.
 
-**Figure A, `trajectories_time_<tag>.png`:** one run per condition in `TIME_CONDITIONS`, all from `--start` (default 0.07, 0.01).
+**Figure A, `trajectories_time_<tag>.png`:** three runs per condition in `TIME_CONDITIONS`, from `TIME_STARTS`, all with total 0.08.
 - Conditions: (1, 1) DHK, (0.95, 1) benefit favours balance, (0.95, 1.05) both favour balance, (1, 0.95) cost favours concentration, (1.05, 0.95) both favour concentration, (0.9, 0.92) division of labour.
-- Per column, a split panel: x1 − x2 from −0.3 to 0.3, with a dashed line at 0, against log time going up from the first recorded time.
-- `--total strips` (default) adds a narrow grey total x1 + x2 panel beside each split panel.
-- `--total shared` instead puts one panel below all the columns, with every condition's share-weighted total overlaid in its own line style.
+- Starts: (0.04, 0.04) balanced (solid), (0.05, 0.03) slightly towards good 1 (dashed), (0.075, 0.005) strongly towards good 1 (dotted). A small legend shows the styles.
+- Per column, a split panel: x1 − x2 from −0.3 to 0.3, with a dashed line at 0, against log time going up from the first recorded time. All three runs are drawn, line width 1–2 pt by share.
+- `--total strips` (default) adds a narrow total x1 + x2 panel beside each split panel, also showing all three runs.
+- `--total shared` instead puts one panel below all the columns, with each condition's share-weighted total for the balanced start overlaid in its own line style.
 
 **Figure B, `trajectories_plane_<tag>.png`:** three runs per condition in `PLANE_CONDITIONS`, with the same total and different leans (`PLANE_STARTS`).
 - Conditions: (1, 1), (0.95, 1), (1, 0.95) and (0.9, 0.92).
-- Starts: (0.07, 0.01) towards good 1, (0.04, 0.04) balanced, (0.01, 0.07) towards good 2. The balanced start is exactly on the diagonal; the engine's saddle push and split test take it off.
+- Starts: (0.07, 0.01) towards good 1, (0.04, 0.04) balanced, (0.01, 0.07) towards good 2.
 - Each panel shows x1 across and x2 up, from 0 to 0.3. It has a faint diagonal and a dashed line x1 + x2 = the final total of the balanced (1, 1) run.
 - Every group's path is drawn with arrowheads. Each start is a hollow circle, and each group's end is a dot sized by share. The panels share a lean colour bar.
 
-Both lists are at the top of the script. The recorded data are saved next to each figure as `trajectories_time_<tag>.npz` and `trajectories_plane_<tag>.npz`. These hold `times_<c>_<s>`, `xs_<c>_<s>` and `fs_<c>_<s>` per condition c and start s, with the held last frame. The meta includes the finishing times.
+The condition and start lists are at the top of the script. The recorded data are saved next to each figure as `trajectories_time_<tag>.npz` and `trajectories_plane_<tag>.npz`. These hold `times_<c>_<s>`, `xs_<c>_<s>` and `fs_<c>_<s>` per condition c and start s, with the held last frame. The meta includes the finishing times.
 
 ## One-good scripts
 
