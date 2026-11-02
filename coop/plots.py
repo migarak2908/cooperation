@@ -120,18 +120,69 @@ def plot_side_by_side(left, right, r, scheme, titles, filename):
     save(fig, filename)
 
 
-def plot_scale(values, r, scheme, title, filename):
-    vmin, vmax = scheme["range"](r) if callable(scheme.get("range")) else scheme.get("range", (None, None))
+def plot_scale(values, r, scheme, title, filename, relative_to=None):
+    # relative_to: a description of the reference panel (e.g. "p = 1, q = 1") when values are
+    # differences from it; then a diverging colour map centred on 0 with symmetric limits
+    label = scheme.get("label", "").format(scale=references.investment_scale(r)[1])
+    cmap = None
+    if relative_to:
+        largest = np.nanmax(np.abs(values)) if np.isfinite(values).any() else 0.0
+        vmin, vmax = -(largest or 1.0), largest or 1.0
+        cmap, label = "RdBu_r", f"{label}, minus at {relative_to}"
+    else:
+        vmin, vmax = scheme["range"](r) if callable(scheme.get("range")) else scheme.get("range", (None, None))
     fig = plt.figure(figsize=figure_size(r))
     axes, each = panel_axes(fig, r)
     for ax, i, j in each:
         im = ax.imshow(values[i, j], origin="lower", extent=extent(r), aspect="auto",
-                       interpolation="nearest", vmin=vmin, vmax=vmax)
+                       interpolation="nearest", vmin=vmin, vmax=vmax, cmap=cmap)
         draw_reference(ax, r)
     fig.suptitle(title, fontsize=11)
-    fig.colorbar(im, ax=axes, label=scheme.get("label", "").format(scale=references.investment_scale(r)[1]))
+    fig.colorbar(im, ax=axes, label=label)
     if reference_handles(r):
         fig.legend(handles=reference_handles(r), loc="lower left", fontsize=8)
+    save(fig, filename)
+
+
+# ---------- summary: one small grid per condition, one cell per panel ----------
+
+def cell_edges(values):
+    # edges of cells centred on the (sorted) values: midpoints, and half a step beyond each end
+    v = np.asarray(values, float)
+    if len(v) == 1:
+        return np.array([v[0] - 0.5, v[0] + 0.5])
+    mid = (v[1:] + v[:-1]) / 2
+    return np.concatenate([[v[0] - (mid[0] - v[0])], mid, [v[-1] + (v[-1] - mid[-1])]])
+
+
+def plot_summary(fractions, entries, r, filename):
+    # fractions: one (panel a, panel b) array per entry; panel a across, panel b up
+    (a, b), (a_values, b_values) = r["panel_names"], r["panel_values"]
+    fig, axes = plt.subplots(1, len(entries), figsize=(3.6 * len(entries) + 1, 4.2), squeeze=False)
+    for ax, fraction, (title, scheme, relative_to, comparison, threshold) in zip(axes[0], fractions, entries):
+        im = ax.pcolormesh(cell_edges(a_values), cell_edges(b_values), fraction.T, vmin=0, vmax=1, cmap="viridis")
+        for i, va in enumerate(a_values):
+            for j, vb in enumerate(b_values):
+                ax.text(va, vb, f"{fraction[i, j]:.2f}", ha="center", va="center", fontsize=8,
+                        color="white" if fraction[i, j] < 0.6 else "black")
+        if {a, b} == {"p", "q"}:
+            # q = p and q = (p + 1)/2, with p on whichever axis it is
+            x0, x1 = ax.get_xlim()
+            xs = np.linspace(x0, x1, 50)
+            for style, line in [("--", lambda p: p), (":", lambda p: (p + 1) / 2)]:
+                if a == "p":
+                    ax.plot(xs, line(xs), color="black", linewidth=1, linestyle=style)
+                else:                               # q across: q = line(p) -> p as a function of q
+                    ax.plot(xs, xs if style == "--" else 2 * xs - 1, color="black", linewidth=1, linestyle=style)
+            ax.set_xlim(x0, x1); ax.set_ylim(*cell_edges(b_values)[[0, -1]])
+        condition = {"abs>": "|value| >", ">": ">", "<": "<"}[comparison] + f" {threshold:g}"
+        relative = "" if relative_to is None else ", minus at " + ", ".join(f"{k} = {v:g}" for k, v in relative_to.items())
+        ax.set_title(f"{title}\n{scheme} {condition}{relative}", fontsize=8)
+        ax.set_xlabel(r["labels"][a]); ax.set_ylabel(r["labels"][b])
+        ax.set_xticks(a_values); ax.set_yticks(b_values)
+    fig.subplots_adjust(top=0.78, wspace=0.35)                # room for the titles
+    fig.colorbar(im, ax=axes, label="fraction of the panel's grid points")
+    fig.suptitle(f"summary - {r['tag']}", fontsize=10)
     save(fig, filename)
 
 

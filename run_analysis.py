@@ -7,6 +7,8 @@
 #         python run_analysis.py RESULTS.npz --invested absolute   (override the "invested" rule)
 #         python run_analysis.py RESULTS.npz --cut 0.7             (each group's lean, at grid column 0.7)
 #         python run_analysis.py RESULTS.npz --compare OTHER.npz   (side by side, and where labels differ)
+#         python run_analysis.py RESULTS.npz --scheme mean_investment --relative-to p=1,q=1   (minus that panel)
+#         python run_analysis.py RESULTS.npz --summary             (fraction of each panel meeting SUMMARIES)
 #         in Colab: %run run_analysis.py RESULTS.npz
 
 import argparse
@@ -14,7 +16,7 @@ from collections import Counter
 import numpy as np
 
 from coop import plots, references, results, schemes
-from coop.schemes import SCHEMES, RARE_FRAC
+from coop.schemes import SCHEMES, SUMMARIES, RARE_FRAC
 
 
 def default_schemes(r):
@@ -39,7 +41,36 @@ def print_counts(labels, r, scheme, title):
             print(f"  {c:5d}  {v}" + ("" if v in names else "   <- other (grey)"))
 
 
-def analyse(r, name):
+def parse_values(text):
+    # "p=1,q=1" -> {"p": 1.0, "q": 1.0}
+    return {name: float(value) for name, value in (item.split("=") for item in text.split(","))}
+
+
+def describe(values):
+    return ", ".join(f"{name} = {v:g}" for name, v in values.items())
+
+
+def relative(values, r, reference):
+    # values (panel a, panel b, row, column) minus, at the same grid point, the panel with the reference
+    # values; a panel parameter not in reference keeps the panel's own value
+    (a, b), (a_values, b_values) = r["panel_names"], r["panel_values"]
+    if not set(reference) <= {a, b}:
+        raise SystemExit(f"--relative-to: the panel parameters are {a} and {b}, not {', '.join(reference)}")
+    def index(name, own_values, k):
+        if name not in reference:
+            return k
+        if reference[name] not in own_values:
+            raise SystemExit(f"--relative-to: no panel has {name} = {reference[name]:g} "
+                             f"(its values: {', '.join(f'{v:g}' for v in own_values)})")
+        return own_values.index(reference[name])
+    out = np.empty_like(values)
+    for i in range(len(a_values)):
+        for j in range(len(b_values)):
+            out[i, j] = values[i, j] - values[index(a, a_values, i), index(b, b_values, j)]
+    return out
+
+
+def analyse(r, name, relative_to=None):
     scheme = SCHEMES[name]
     values = scheme["outcome"](r["xs"], r["fs"], r)            # (start, panel a, panel b, row, column)
     base = f"{name}_{r['tag']}"
@@ -50,10 +81,19 @@ def analyse(r, name):
     if "check" in scheme:
         print(f"{name} checks:"); scheme["check"](r)
 
-    # 2. a scale: averaged over starts
+    # 2. a scale: averaged over starts, optionally minus the panel with relative_to's values
     if scheme["kind"] == "scale":
-        plots.plot_scale(values.mean(axis=0), r, scheme, f"{name}, averaged over starts - {r['tag']}", f"{base}.png")
+        averaged = values.mean(axis=0)
+        if relative_to:
+            suffix = "-".join(f"{k}{v:g}" for k, v in relative_to.items())
+            plots.plot_scale(relative(averaged, r, relative_to), r, scheme,
+                             f"{name}, averaged over starts, minus at {describe(relative_to)} - {r['tag']}",
+                             f"{base}_rel-{suffix}.png", relative_to=describe(relative_to))
+        else:
+            plots.plot_scale(averaged, r, scheme, f"{name}, averaged over starts - {r['tag']}", f"{base}.png")
         return
+    if relative_to:
+        print(f"(--relative-to applies to scale schemes only; {name} is plotted as usual)")
 
     # 3. categories: grid labels, and a filtered version with rare labels replaced
     labels_raw = schemes.grid_labels(values)                  # (panel a, panel b, row, column)
@@ -72,6 +112,25 @@ def analyse(r, name):
                           f"{base}_filtered.png")
     plots.plot_categories(labels_raw, r, scheme, f"{name}, unfiltered: what actually happened - {r['tag']}",
                           f"{base}_unfiltered.png")
+
+
+def summarise(r):
+    # for each SUMMARIES entry, the fraction of each panel's grid points meeting its condition;
+    # printed as a table (rows panels, columns entries) and saved as one figure
+    fractions = []
+    for title, name, relative_to, comparison, threshold in SUMMARIES:
+        values = SCHEMES[name]["outcome"](r["xs"], r["fs"], r).mean(axis=0)     # (panel a, panel b, row, column)
+        if relative_to:
+            values = relative(values, r, {k: float(v) for k, v in relative_to.items()})
+        with np.errstate(invalid="ignore"):                                     # NaN: not met
+            met = {"abs>": np.abs(values) > threshold, ">": values > threshold, "<": values < threshold}[comparison]
+        fractions.append(met.mean(axis=(-2, -1)))
+    width = max(len(t) for t, *_ in SUMMARIES)
+    print("\nsummary: fraction of each panel's grid points meeting each condition")
+    print(" " * 22 + "".join(f"{t:>{width + 2}s}" for t, *_ in SUMMARIES))
+    for (i, j), panel in panel_names(r).items():
+        print(f"{panel:22s}" + "".join(f"{f[i, j]:>{width + 2}.2f}" for f in fractions))
+    plots.plot_summary(fractions, SUMMARIES, r, f"summary_{r['tag']}.png")
 
 
 def compare_results(r, other, name):
@@ -105,13 +164,19 @@ if __name__ == "__main__":
                         help="rule for an invested good (default: the model's own)")
     parser.add_argument("--cut", type=float, help="plot each group's lean along the grid rows, at the grid column nearest this")
     parser.add_argument("--compare", metavar="OTHER", help="another results file on the same grid to compare with")
+    parser.add_argument("--relative-to", metavar="NAME=V[,NAME=V]",
+                        help="scale schemes: plot each panel minus the panel with these values, e.g. p=1,q=1")
+    parser.add_argument("--summary", action="store_true", help="fraction of each panel meeting each SUMMARIES condition")
     args = parser.parse_args()
 
     r = results.load(args.results)
     r["invested_rule"] = args.invested
-    names = args.scheme or ([] if args.cut is not None else default_schemes(r))
+    relative_to = parse_values(args.relative_to) if args.relative_to else None
+    names = args.scheme or ([] if args.cut is not None or args.summary else default_schemes(r))
     if args.cut is not None:
         plots.plot_cut(r, args.cut)
+    if args.summary:
+        summarise(r)
     if args.compare:
         other = results.load(args.compare)
         other["invested_rule"] = args.invested
@@ -119,4 +184,4 @@ if __name__ == "__main__":
     else:
         for name in names:
             print(f"\n---------- {name} ----------")
-            analyse(r, name)
+            analyse(r, name, relative_to)

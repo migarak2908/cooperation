@@ -134,13 +134,15 @@ def mean_investment(xs, fs, r):
     return np.sum(fs[..., None] * xs, axis=(-2, -1)) / (2 * references.investment_scale(r)[0])
 
 
-# ---------- scheme: division-of-labour score (a sliding scale) ----------
+# ---------- schemes: how the investment is split between goods (sliding scales) ----------
 # With group shares f_i, d_i = x1_i - x2_i and t_i = x1_i + x2_i (counted groups only):
 #   individual = sum f_i |d_i| / sum f_i t_i      how lopsided individuals are
 #   population = |sum f_i d_i| / sum f_i t_i      how lopsided the population is as a whole
-#   score = individual - population               0 to 1; 1 = groups specialise in opposite goods
+#   division_of_labour_index = individual - population
+#                                                 0 to 1; 1 = groups specialise in opposite goods
+# All three are 0 where nobody invests.
 
-def division_of_labour_index(xs, fs, r):
+def lopsidedness(xs, fs, r):
     xs, fs, counted = counted_groups(xs, fs, r)
     f = np.where(counted, fs, 0.0)
     d, t = xs[..., 0] - xs[..., 1], xs[..., 0] + xs[..., 1]
@@ -148,7 +150,38 @@ def division_of_labour_index(xs, fs, r):
     with np.errstate(divide="ignore", invalid="ignore"):
         individual = np.sum(f * np.abs(d), axis=-1) / total
         population = np.abs(np.sum(f * d, axis=-1)) / total
-    return np.where(total < 1e-9, 0.0, individual - population)      # nobody invests: 0
+    return individual, population, total
+
+
+def individual(xs, fs, r):
+    individual, _, total = lopsidedness(xs, fs, r)
+    return np.where(total < 1e-9, 0.0, individual)
+
+
+def population(xs, fs, r):
+    _, population, total = lopsidedness(xs, fs, r)
+    return np.where(total < 1e-9, 0.0, population)
+
+
+def division_of_labour_index(xs, fs, r):
+    individual, population, total = lopsidedness(xs, fs, r)
+    return np.where(total < 1e-9, 0.0, individual - population)
+
+
+def check_lopsidedness(r):
+    def values(groups, shares):
+        xs = np.zeros((4, 2)); fs = np.zeros(4)
+        xs[:len(groups)], fs[:len(shares)] = groups, shares
+        return float(individual(xs, fs, r)), float(population(xs, fs, r))
+    cases = [
+        ("one group at (1, 0)",                          values([(1, 0)], [1.0]),                  (1.0, 1.0)),
+        ("groups at (1, 0) and (0, 1), shares 0.5 each", values([(1, 0), (0, 1)], [0.5, 0.5]),     (1.0, 0.0)),
+    ]
+    for name, got, expected in cases:
+        ok = np.allclose(got, expected, rtol=0, atol=1e-9)
+        print(f"  {'ok' if ok else 'FAILED':6s} {name:50s} -> individual {got[0]:g}, population {got[1]:g} "
+              f"(expected {expected[0]:g}, {expected[1]:g})")
+        assert ok
 
 
 def check_division_of_labour_index(r):
@@ -167,6 +200,35 @@ def check_division_of_labour_index(r):
         assert abs(got - expected) < 1e-9
 
 
+# ---------- scheme: spread of total investment between groups (a sliding scale) ----------
+# sqrt(sum f_i (t_i - sum f_j t_j)^2) with t_i = x1_i + x2_i (counted groups only): 0 when every group
+# invests the same total, large when the totals branch (e.g. cooperators and defectors)
+
+def spread(xs, fs, r):
+    xs, fs, counted = counted_groups(xs, fs, r)
+    f = np.where(counted, fs, 0.0)
+    t = xs[..., 0] + xs[..., 1]
+    mean = np.sum(f * t, axis=-1, keepdims=True)
+    return np.sqrt(np.sum(f * (t - mean) ** 2, axis=-1))
+
+
+def total_spread(xs, fs, r):
+    # as a fraction of twice references.investment_scale (x_max, or x*): 0.5 for an even split
+    # between investing nothing and the scale in both goods
+    return spread(xs, fs, r) / (2 * references.investment_scale(r)[0])
+
+
+def check_total_spread(r):
+    # checked on the unscaled spread, so it holds for any model's scale
+    m = r["x_max"]
+    xs = np.zeros((4, 2)); fs = np.zeros(4)
+    xs[0], fs[:2] = (m, m), (0.5, 0.5)
+    got = float(spread(xs, fs, r)) / (2 * m)
+    name = f"groups at ({m:g}, {m:g}) and (0, 0), shares 0.5 each"
+    print(f"  {'ok' if abs(got - 0.5) < 1e-9 else 'FAILED':6s} {name:50s} -> spread / (2 x_max) {got:g} (expected 0.5)")
+    assert abs(got - 0.5) < 1e-9
+
+
 # ---------- schemes ----------
 # kind: "categories" or "scale". Optional: check (run first), and for categories colours (a fixed
 # legend) and compare (run on the unfiltered grid labels: the model's analytic prediction); for a
@@ -181,7 +243,28 @@ SCHEMES = {
                               range=lambda r: (0, references.investment_scale(r)[2])),
     "division_of_labour_index": dict(kind="scale", outcome=division_of_labour_index, check=check_division_of_labour_index,
                                      label="division-of-labour score (1 = clean division of labour)", range=(0, 1)),
+    "individual":        dict(kind="scale", outcome=individual, check=check_lopsidedness, range=(0, 1),
+                              label="individual lopsidedness (0 = invests equally in both goods, 1 = in one only)"),
+    "population":        dict(kind="scale", outcome=population, check=check_lopsidedness, range=(0, 1),
+                              label="population lopsidedness (0 = goods balanced overall, 1 = one good only)"),
+    "total_spread":      dict(kind="scale", outcome=total_spread, check=check_total_spread, range=(0, 0.5),
+                              label="spread of total investment between groups / (2 {scale})"),
 }
+
+
+# ---------- summaries ----------
+# one cell per panel: the fraction of the panel's grid points meeting a condition on a scale scheme
+# (averaged over starts first, then minus the panel with relative_to's values, if given);
+# comparison "abs>" (|value| > threshold), ">" or "<"
+
+SUMMARIES = [
+    # title                 scheme                      relative_to         comparison  threshold
+    ("totals changed",      "mean_investment",          {"p": 1, "q": 1},   "abs>",     0.05),
+    ("branched totals",     "total_spread",             None,               ">",        0.1),
+    ("single specialists",  "population",               None,               ">",        0.5),
+    ("division of labour",  "division_of_labour_index", None,               ">",        0.5),
+    ("balanced",            "individual",               None,               "<",        0.1),
+]
 
 
 # ---------- grid labels ----------

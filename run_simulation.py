@@ -118,7 +118,7 @@ if __name__ == "__main__":
     engine_options.add_argument("--fixed-time", type=float, help="stage length for --stop fixed_time")
     engine_options.add_argument("--start-jitter", action="store_true", default=None)
     engine_options.add_argument("--jitter-seed", type=int)
-    for name in ["x_max", "x_min", "max_dt", "max_steps", "tol"]:
+    for name in ["x_max", "x_min", "max_dt", "max_steps", "tol", "start_nudge"]:
         engine_options.add_argument("--" + name.replace("_", "-"), type=int if name == "max_steps" else float)
     engine_options.add_argument("--x64", action="store_true", default=None, help="64-bit floats")
     args = vars(parser.parse_args())

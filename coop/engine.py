@@ -36,6 +36,7 @@ class Settings:
     x_min: float = 1e-6
     lo: float = None                 # starts: the four corners of (lo, hi) in both goods;
     hi: float = None                 # None: 0.5% and 99.5% of x_max
+    start_nudge: float = 0.0         # moved off the diagonal: (lo, lo + nudge) and (hi - nudge, hi)
     # time stepping and stopping
     time_step: float = 0.01          # starting time step (halved while a run is cycling)
     min_dt: float = 1e-5
@@ -68,7 +69,11 @@ class Settings:
     def starts(self):
         lo = 0.005 * self.x_max if self.lo is None else self.lo
         hi = 0.995 * self.x_max if self.hi is None else self.hi
-        return [(lo, lo), (lo, hi), (hi, lo), (hi, hi)]
+        # the balanced corners are nudged off the diagonal: a group investing exactly equally in both
+        # goods can never begin to lean towards one (start_jitter doesn't guarantee this, as it can
+        # clip a low start back onto the diagonal); the lopsided corners are unchanged
+        n = self.start_nudge
+        return [(lo, lo + n), (lo, hi), (hi, lo), (hi - n, hi)]
 
     @property
     def dtype(self):
