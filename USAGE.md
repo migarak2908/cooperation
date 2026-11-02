@@ -197,17 +197,27 @@ The same works for any two runs on the same grid, e.g. with and without `--flat-
 How the population evolves over time for a few (p, q) conditions, in the style of DHK's Fig. 1 time panels.
 
 ```
-python run_trajectories.py [--start X1,X2] [--end-time T]
+python run_trajectories.py [--start X1,X2] [--total strips|shared] [--end-time T]
 ```
 
 - Quadratic model with the flat benefit, `tol = 1e-5`, DHK's ESS point B converted: b1' = 7/4.6, b2' = 1.5.
-- One run per condition, editable in `CONDITIONS` at the top of the script: (1, 1) "DHK", (0.95, 1) "benefit favours balance", (1, 0.95) "cost favours concentration", (0.9, 0.92) "both: division of labour".
-- Every run starts at `--start` (default 0.04, 0.01, slightly towards good 1) and runs until it has finished. The state is recorded every 20 steps (0.2 time units) through `engine.simulate`'s `record` argument.
-- Every run is held at its final state up to a common end time, `--end-time` (default: the longest run's finishing time), so all lines reach the end.
-- Two figures from the same runs. Group colours show the lean (x1 − x2)/(x1 + x2): red −1, purple 0, blue +1. Line width is proportional to share, and a split shows as a fork from the parent.
-  - `trajectories_time_<tag>.png`: one column per condition with the split x1 − x2 (−0.3 to 0.3, dashed line at 0) against log time going up, so the fast early phase and the slow split both show. Below is one shared panel of each condition's share-weighted total x1 + x2 against log time (one line style per condition), which shows the totals coincide.
-  - `trajectories_plane_<tag>.png`: one square (x1, x2) panel per condition, 0 to 0.3. It shows the diagonal x1 = x2, a dashed "same total" line x1 + x2 = the (1, 1) run's final total, each group's path with arrowheads at times 0.5, 2, 8, 32 and 128, and a dot sized by share where each group ends. There is a shared lean colour bar.
-- Also saves the recorded data, `trajectories_<tag>.npz` (`times_<c>`, `xs_<c>`, `fs_<c>` per condition c, with the held last frame, plus the meta including each run's finishing time).
+- Runs are recorded every 20 steps (0.2 time units) through `engine.simulate`'s `record` argument.
+- Each run is held at its final state up to a common end time, `--end-time` (default: the longest run's finishing time), so all lines reach the end.
+- Lean (x1 − x2)/(x1 + x2) is coloured red at −1, purple at 0 and blue at +1. Line width is proportional to share, and a split shows as a fork from the parent.
+
+**Figure A, `trajectories_time_<tag>.png`:** one run per condition in `TIME_CONDITIONS`, all from `--start` (default 0.07, 0.01).
+- Conditions: (1, 1) DHK, (0.95, 1) benefit favours balance, (0.95, 1.05) both favour balance, (1, 0.95) cost favours concentration, (1.05, 0.95) both favour concentration, (0.9, 0.92) division of labour.
+- Per column, a split panel: x1 − x2 from −0.3 to 0.3, with a dashed line at 0, against log time going up from the first recorded time.
+- `--total strips` (default) adds a narrow grey total x1 + x2 panel beside each split panel.
+- `--total shared` instead puts one panel below all the columns, with every condition's share-weighted total overlaid in its own line style.
+
+**Figure B, `trajectories_plane_<tag>.png`:** three runs per condition in `PLANE_CONDITIONS`, with the same total and different leans (`PLANE_STARTS`).
+- Conditions: (1, 1), (0.95, 1), (1, 0.95) and (0.9, 0.92).
+- Starts: (0.07, 0.01) towards good 1, (0.04, 0.04) balanced, (0.01, 0.07) towards good 2. The balanced start is exactly on the diagonal; the engine's saddle push and split test take it off.
+- Each panel shows x1 across and x2 up, from 0 to 0.3. It has a faint diagonal and a dashed line x1 + x2 = the final total of the balanced (1, 1) run.
+- Every group's path is drawn with arrowheads. Each start is a hollow circle, and each group's end is a dot sized by share. The panels share a lean colour bar.
+
+Both lists are at the top of the script. The recorded data are saved next to each figure as `trajectories_time_<tag>.npz` and `trajectories_plane_<tag>.npz`. These hold `times_<c>_<s>`, `xs_<c>_<s>` and `fs_<c>_<s>` per condition c and start s, with the held last frame. The meta includes the finishing times.
 
 ## One-good scripts
 
