@@ -176,6 +176,12 @@ def division_of_labour_index(xs, fs, r):
     return np.where(nobody_invests(total, r), np.nan, individual - population)
 
 
+def specialisation(xs, fs, r):
+    # 2 population - individual: +1 all in the same good, 0 balanced, -1 division of labour
+    individual, population, total = lopsidedness(xs, fs, r)
+    return np.where(nobody_invests(total, r), np.nan, 2 * population - individual)
+
+
 def first(value):
     # a hand-made check case's value; the scale may differ per panel (x*), so take the first panel's
     return float(np.ravel(value)[0])
@@ -214,6 +220,21 @@ def check_division_of_labour_index(r):
     for name, got, expected in cases:
         print(f"  {'ok' if same(got, expected) else 'FAILED':6s} {name:50s} -> {got:g} (expected {expected:g})")
         assert same(got, expected)
+
+
+def check_specialisation(r):
+    def score(groups, shares):
+        xs = np.zeros((4, 2)); fs = np.zeros(4)
+        xs[:len(groups)], fs[:len(shares)] = groups, shares
+        return first(specialisation(xs, fs, r))
+    cases = [
+        ("one group at (1, 0): all in the same good",     score([(1, 0)], [1.0]),                  1.0),
+        ("one group at (1, 1): balanced",                 score([(1, 1)], [1.0]),                  0.0),
+        ("(1, 0) and (0, 1), shares 0.5: division",       score([(1, 0), (0, 1)], [0.5, 0.5]),     -1.0),
+    ]
+    for name, got, expected in cases:
+        print(f"  {'ok' if abs(got - expected) < 1e-9 else 'FAILED':6s} {name:50s} -> {got:g} (expected {expected:g})")
+        assert abs(got - expected) < 1e-9
 
 
 # ---------- scheme: spread of total investment between groups (a sliding scale) ----------
@@ -306,7 +327,8 @@ def check_dhk_type(r):
 # ---------- schemes ----------
 # kind: "categories" or "scale". Optional: check (run first), and for categories colours (a fixed
 # legend) and compare (run on the unfiltered grid labels: the model's analytic prediction); for a
-# scale, label (may use {scale}) and range ((vmin, vmax), or a function of r giving it)
+# scale, label (may use {scale}), range ((vmin, vmax), or a function of r giving it) and colours (a
+# diverging map's colours from vmin to vmax; default viridis)
 
 SCHEMES = {
     "cc_dc_dd":          dict(kind="categories", outcome=cc_dc_dd, colours=cc_dc_dd_colours,
@@ -323,6 +345,9 @@ SCHEMES = {
                               label="population lopsidedness (0 = goods balanced overall, 1 = one good only)"),
     "total_spread":      dict(kind="scale", outcome=total_spread, check=check_total_spread, range=(0, 0.5),
                               label="spread of total investment between groups / (2 {scale})"),
+    "specialisation":    dict(kind="scale", outcome=specialisation, check=check_specialisation, range=(-1, 1),
+                              colours=["#1D9E75", "#FFFFFF", "#378ADD"],
+                              label="specialisation: +1 = all in the same good, 0 = balanced, -1 = division of labour"),
     "not_converged":     dict(kind="scale", outcome=not_converged, range=(0, 1),
                               label="fraction of starts not converged"),
     "dhk_type":          dict(kind="categories", outcome=dhk_type, colours=dhk_colours,

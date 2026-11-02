@@ -134,6 +134,8 @@ def plot_scale(values, r, scheme, title, filename, relative_to=None, point=None)
         cmap, label = TEAL_ORANGE if point else "RdBu_r", f"{label}, minus at {relative_to}"
     else:
         vmin, vmax = scheme["range"](r) if callable(scheme.get("range")) else scheme.get("range", (None, None))
+        if "colours" in scheme:
+            cmap = LinearSegmentedColormap.from_list(scheme["label"], scheme["colours"])
     cmap = plt.get_cmap(cmap).copy()
     cmap.set_bad("lightgrey")                                           # NaN: no value (e.g. nobody invests)
     fig = plt.figure(figsize=figure_size(r))

@@ -132,6 +132,7 @@ With no file it uses the newest `results_*.npz` in the folder.
 | `cc_dc_dd` | categories | each group is CC (invests in both goods), DC (one) or DD (neither); a run's outcome is its distinct group types (e.g. `CC and DD`), a grid point's label the distinct outcomes over its four starts (e.g. `CC \|or\| DD`) |
 | `cc_dc_dd_division` | categories | the same, but DC groups investing in different goods give `DC and DC'` (division of labour) |
 | `mean_investment` | scale | share-weighted mean investment over groups and goods, divided by `x_max` (quadratic), the panel's `x*` (exp with b and beta per panel, scale up to 2) or the largest `x*` on the grid (exp otherwise) |
+| `specialisation` | scale | −1 to 1: 2 × population − individual lopsidedness; +1 = all in the same good, 0 = balanced, −1 = division of labour. Green (−1), white (0), blue (+1); NaN where nobody invests |
 | `division_of_labour_index` | scale | 0 to 1: how lopsided individuals are minus how lopsided the population is; 1 = groups specialise in opposite goods |
 | `individual` | scale | 0 to 1: how lopsided individuals are, `sum f_i \|x1_i - x2_i\| / sum f_i t_i`; 0 = everyone invests equally in both goods, 1 = everyone in one good only |
 | `population` | scale | 0 to 1: how lopsided the population is as a whole, `\|sum f_i (x1_i - x2_i)\| / sum f_i t_i`; 0 = the goods are balanced overall |
