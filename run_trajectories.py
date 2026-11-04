@@ -12,7 +12,7 @@
 #
 # Usage:  python run_trajectories.py                       (totals shared)
 #         python run_trajectories.py --total strips --start 0.1,0.02
-#         python run_trajectories.py --plane-diff 0.01       (plane starts x1 - x2 = +-0.01)
+#         python run_trajectories.py --pq-diff 0.01          (p and q 0.01 from 1 instead of 0.05)
 #         python run_trajectories.py --end-time 200          (default: the longest run's finishing time)
 #         in Colab: %run run_trajectories.py
 
@@ -38,26 +38,28 @@ SETTINGS = dict(tol=1e-5, chunk=20)       # chunk: steps between records (20 ste
 # figure A: every run starts at --start (default START), total 0.16
 START = (0.155, 0.005)
 
-# figure B's starts: total 0.16, and x1 - x2 = +D (towards good 1), 0 (balanced) or -D (towards good 2),
-# with D from --plane-diff (default PLANE_DIFF). The balanced one is exactly on the diagonal (the
-# engine's saddle push and split test take it off)
-PLANE_TOTAL, PLANE_DIFF = 0.16, 0.06
-GOOD_1, BALANCED, GOOD_2 = "towards good 1", "balanced", "towards good 2"
+# figure B's starts, all with total 0.16; the balanced one is exactly on the diagonal (the engine's
+# saddle push and split test take it off)
+GOOD_1, BALANCED, GOOD_2 = (0.11, 0.05), (0.08, 0.08), (0.05, 0.11)
+
+# p and q move this far from 1 (--pq-diff); division of labour at (1 - 2D, 1 - 1.6D), inside
+# p < q < (p+1)/2 for any D
+PQ_DIFF = 0.05
 
 
-def plane_starts(diff):
-    half = PLANE_TOTAL / 2
-    return {GOOD_1: (half + diff / 2, half - diff / 2), BALANCED: (half, half), GOOD_2: (half - diff / 2, half + diff / 2)}
+def conditions(d):
+    # all figures: (p, q), title and figure B's starts (all three with --plane-starts all), one column
+    # (A, C) or panel (B) each
+    at = lambda p, q: (round(p, 6), round(q, 6))
+    return [(at(1, 1),             "arithmetic mean",            [GOOD_1, BALANCED, GOOD_2]),
+            (at(1 - d, 1),         "benefit favours balance",    [GOOD_1, GOOD_2]),
+            (at(1 - d, 1 + d),     "both favour balance",        [GOOD_1, GOOD_2]),
+            (at(1, 1 - d),         "cost favours concentration", [GOOD_1, GOOD_2]),
+            (at(1 + d, 1 - d),     "both favour concentration",  [GOOD_1, GOOD_2]),
+            (at(1 - 2 * d, 1 - 1.6 * d), "division of labour",   [GOOD_1, BALANCED, GOOD_2])]
 
 
-# all figures: (p, q), title and figure B's starts (all three with --plane-starts all), one column
-# (A, C) or panel (B) each
-CONDITIONS = [((1.0, 1.0),   "arithmetic mean",            [GOOD_1, BALANCED, GOOD_2]),
-              ((0.95, 1.0),  "benefit favours balance",    [GOOD_1, GOOD_2]),
-              ((0.95, 1.05), "both favour balance",        [GOOD_1, GOOD_2]),
-              ((1.0, 0.95),  "cost favours concentration", [GOOD_1, GOOD_2]),
-              ((1.05, 0.95), "both favour concentration",  [GOOD_1, GOOD_2]),
-              ((0.9, 0.92),  "division of labour",         [GOOD_1, BALANCED, GOOD_2])]
+CONDITIONS = conditions(PQ_DIFF)
 
 DIFF_LIMIT = 0.3                     # figure A: the difference x1 - x2 from -0.3 to 0.3
 PLANE_LIMIT = 0.3                    # figure B: x1 and x2 from 0 to 0.3
@@ -339,21 +341,20 @@ if __name__ == "__main__":
     parser.add_argument("--plane-starts", choices=["listed", "all"], default="listed",
                         help="figure B: each condition's own starts (balanced only in arithmetic mean and "
                              "division of labour), or all three starts in every panel")
-    parser.add_argument("--plane-diff", type=float, default=PLANE_DIFF, metavar="D",
-                        help=f"figure B: x1 - x2 of the offset starts, +D and -D, total {PLANE_TOTAL:g} "
-                             f"(default {PLANE_DIFF:g})")
+    parser.add_argument("--pq-diff", type=float, default=PQ_DIFF, metavar="D",
+                        help=f"all figures: how far p and q move from 1 (default {PQ_DIFF:g})")
     parser.add_argument("--end-time", type=float, help="hold every run's final state up to this time "
                                                        "(default: the longest run's finishing time)")
     args = parser.parse_args()
     start = tuple(float(v) for v in args.start.split(","))
+    CONDITIONS = conditions(args.pq_diff)
 
     base = ["quadratic_flat", f"b1-{B1:.4g}", f"b2-{B2:g}", f"tol{SETTINGS['tol']:g}", f"chunk{SETTINGS['chunk']}"]
     end = [f"end{args.end_time:g}"] if args.end_time else []
     base += [f"p{p:g}-q{q:g}" for (p, q), *_ in CONDITIONS]
     goods_tag = "_".join(base + [f"start-{start[0]:g}-{start[1]:g}"] + end)
     time_tag = "_".join(base + [f"start-{start[0]:g}-{start[1]:g}", f"total-{args.total}"] + end)
-    plane_tag = "_".join(base + ([f"diff{args.plane_diff:g}"] if args.plane_diff != PLANE_DIFF else [])
-                         + (["starts-all"] if args.plane_starts == "all" else []) + end)
+    plane_tag = "_".join(base + (["starts-all"] if args.plane_starts == "all" else []) + end)
     print("running on:", jax.devices())
 
     data = simulate([(pq, [start]) for pq, _, _ in CONDITIONS], args.end_time)
@@ -362,9 +363,9 @@ if __name__ == "__main__":
     plot_goods(data, f"trajectories_goods_{goods_tag}.png")
     print_final(data, CONDITIONS)
 
-    at = plane_starts(args.plane_diff)
-    names = lambda starts: [GOOD_1, BALANCED, GOOD_2] if args.plane_starts == "all" else starts
-    data = simulate([(pq, [at[name] for name in names(starts)]) for pq, _, starts in CONDITIONS], args.end_time)
+    all_starts = args.plane_starts == "all"
+    data = simulate([(pq, [GOOD_1, BALANCED, GOOD_2] if all_starts else starts) for pq, _, starts in CONDITIONS],
+                    args.end_time)
     save_data(data, CONDITIONS, f"trajectories_plane_{plane_tag}.npz")
     plot_plane(data, f"trajectories_plane_{plane_tag}.png")
     print_final(data, CONDITIONS)
