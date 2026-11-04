@@ -52,8 +52,10 @@ def figure_size(r, columns=1):
 def panel_axes(container, r):
     # a grid of axes in container (a figure or subfigure), one per panel: r["panel_rows"] runs down,
     # the other panel parameter across; returns the axes and an iterator over (axis, i, j) with
-    # i, j the panel a, panel b indices
+    # i, j the panel a, panel b indices. Panel titles ("p = 0.8, q = 1") only when there is more than
+    # one panel; a single panel's values are in the file name
     (a, b), (a_values, b_values) = r["panel_names"], r["panel_values"]
+    titled = len(a_values) * len(b_values) > 1
     rows_are_a = r["panel_rows"] == a
     n_rows, n_cols = (len(a_values), len(b_values)) if rows_are_a else (len(b_values), len(a_values))
     axes = container.subplots(n_rows, n_cols, sharex=True, sharey=True, squeeze=False)
@@ -62,7 +64,8 @@ def panel_axes(container, r):
         for i, va in enumerate(a_values):
             for j, vb in enumerate(b_values):
                 ax = axes[i, j] if rows_are_a else axes[j, i]
-                ax.set_title(f"{r['labels'][a]} = {va:g}, {r['labels'][b]} = {vb:g}", fontsize=10)
+                if titled:
+                    ax.set_title(f"{r['labels'][a]} = {va:g}, {r['labels'][b]} = {vb:g}", fontsize=10)
                 ax.set_xlabel(r["labels"][x_name]); ax.set_ylabel(r["labels"][y_name])
                 yield ax, i, j
     return axes, each()
@@ -154,16 +157,19 @@ def plot_scale(values, r, scheme, filename, relative_to=None, point=None, hatch=
     # this grid point ({grid parameter: value}) in each panel: teal-orange, and a cross marks it.
     # hatch: (mask (panel a, panel b, row, column), legend label): hatch the grid points where mask is True.
     # The colour bar carries the scheme's short label, and its ends (scheme "ends") at vmin and vmax
-    label = scheme.get("label", "").format(scale=references.investment_scale(r)[1])
+    scale = references.investment_scale(r)[1]
+    label = scheme.get("label", "").format(scale=scale)
+    unit = f" ({scheme['unit'].format(scale=scale)})" if "unit" in scheme else ""
     ends = None
     if relative_to:
         largest = np.nanmax(np.abs(values)) if np.isfinite(values).any() else 0.0
         vmin, vmax = -(largest or 1.0), largest or 1.0
-        cmap, label = TEAL_ORANGE if point else "RdBu_r", f"{label}: change from {relative_to}"
+        cmap, label = TEAL_ORANGE if point else "RdBu_r", f"change in {label} from {relative_to}"
     else:
         vmin, vmax = scheme["range"](r) if callable(scheme.get("range")) else scheme.get("range", (None, None))
         cmap = LinearSegmentedColormap.from_list(label, scheme["colours"]) if "colours" in scheme else SEQUENTIAL
         ends = scheme.get("ends")
+    label += unit
     cmap = plt.get_cmap(cmap).copy()
     cmap.set_bad(NAN_COLOUR)                                            # NaN: no value (e.g. nobody invests)
     fig = plt.figure(figsize=figure_size(r))

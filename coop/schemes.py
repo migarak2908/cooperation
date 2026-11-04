@@ -327,7 +327,8 @@ def check_dhk_type(r):
 # ---------- schemes ----------
 # kind: "categories" or "scale". Optional: check (run first), and for categories colours (a fixed
 # legend) and compare (run on the unfiltered grid labels: the model's analytic prediction); for a
-# scale, label (may use {scale}), range ((vmin, vmax), or a function of r giving it) and colours (a
+# scale, label, unit (may use {scale}; shown in brackets after the label), range ((vmin, vmax), or a
+# function of r giving it) and colours (a
 # map's colours from vmin to vmax; default plots.SEQUENTIAL), ends (words for the colour bar's two
 # ends) and short (a name for legends, e.g. --hatch)
 
@@ -336,7 +337,7 @@ SCHEMES = {
                               check=check_cc_dc_dd, compare=references.compare),
     "cc_dc_dd_division": dict(kind="categories", outcome=cc_dc_dd_division, colours=cc_dc_dd_colours,
                               check=check_cc_dc_dd, compare=references.compare_division),
-    "mean_investment":   dict(kind="scale", outcome=mean_investment, label="investment / {scale}"),
+    "mean_investment":   dict(kind="scale", outcome=mean_investment, label="mean investment", unit="× {scale}"),
     "division_of_labour_index": dict(kind="scale", outcome=division_of_labour_index, check=check_division_of_labour_index,
                                      short="division of labour",
                                      label="division-of-labour score (1 = clean division of labour)", range=(0, 1)),
