@@ -122,7 +122,7 @@ def hatch_mask(r, hatch):
         raise SystemExit(f"--hatch needs a scale scheme, not {name}")
     with np.errstate(invalid="ignore"):
         mask = average_over_starts(SCHEMES[name]["outcome"](r["xs"], r["fs"], r)) > threshold
-    return mask, f"{SCHEMES[name].get('short', name)} (score > {threshold:g})"
+    return mask, SCHEMES[name].get("short", f"{name} > {threshold:g}")
 
 
 def analyse(r, name, relative_to=None, point=None, hatch=None):
@@ -145,17 +145,12 @@ def analyse(r, name, relative_to=None, point=None, hatch=None):
         averaged = average_over_starts(values)
         if point:
             suffix = "-".join(f"{k}{v:g}" for k, v in point.items())
-            plots.plot_scale(relative_point(averaged, r, point), r, scheme,
-                             f"{name}, averaged over starts, minus at {describe(point)} in each panel - {r['tag']}",
-                             f"{base}_relpt-{suffix}.png", relative_to=describe(point), point=point, hatch=hatch)
+            plots.plot_scale(relative_point(averaged, r, point), r, scheme, f"{base}_relpt-{suffix}.png", relative_to=describe(point), point=point, hatch=hatch)
         elif relative_to:
             suffix = "-".join(f"{k}{v:g}" for k, v in relative_to.items())
-            plots.plot_scale(relative(averaged, r, relative_to), r, scheme,
-                             f"{name}, averaged over starts, minus at {describe(relative_to)} - {r['tag']}",
-                             f"{base}_rel-{suffix}.png", relative_to=describe(relative_to), hatch=hatch)
+            plots.plot_scale(relative(averaged, r, relative_to), r, scheme, f"{base}_rel-{suffix}.png", relative_to=describe(relative_to), hatch=hatch)
         else:
-            plots.plot_scale(averaged, r, scheme, f"{name}, averaged over starts - {r['tag']}", f"{base}.png",
-                             hatch=hatch)
+            plots.plot_scale(averaged, r, scheme, f"{base}.png", hatch=hatch)
         return
     if relative_to or point or hatch:
         print(f"(--relative-to, --relative-to-point and --hatch apply to scale schemes only; {name} is plotted as usual)")

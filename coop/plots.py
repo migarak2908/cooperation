@@ -6,7 +6,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
+from matplotlib.collections import LineCollection
+from matplotlib.patches import Patch, Rectangle
 
 from coop import references
 from coop.schemes import counted_groups, invested_threshold
@@ -14,10 +15,15 @@ from coop.schemes import counted_groups, invested_threshold
 OTHER_COLOUR = "#9e9e9e"
 # differences from a grid point: teal negative, white 0, orange positive (red and blue mean the goods)
 TEAL_ORANGE = LinearSegmentedColormap.from_list("teal_orange", ["#0F7B7B", "#FFFFFF", "#E07B00"])
+# scale plots: one hue, light (low) to dark (high), away from the goods' red and blue; NaN in grey
+SEQUENTIAL = LinearSegmentedColormap.from_list("sequential", ["#F5F2EA", "#9FCBB9", "#3E8C7E", "#123F3A"])
+NAN_COLOUR = "#CFCFCF"
+HATCH_COLOUR = "#E8A33D"             # --hatch: amber lines and outline, clear on both ends of SEQUENTIAL
+REFERENCE_GREY = "#7A7A7A"           # scale plots: reference lines, visible on both ends of SEQUENTIAL
 
 
-def save(fig, filename):
-    fig.savefig(filename, dpi=150)
+def save(fig, filename, **options):
+    fig.savefig(filename, dpi=150, **options)
     plt.close(fig)
     print(f"saved {filename}")
 
@@ -67,22 +73,22 @@ def extent(r):
     return [x_axis[0], x_axis[-1], y_axis[0], y_axis[-1]]
 
 
-def draw_reference(ax, r):
-    # the model's reference lines (and shading), clipped to the plotted range
+def draw_reference(ax, r, colour=None):
+    # the model's reference lines (and shading), clipped to the plotted range; colour: all lines in it
     outside = references.shade(r)
     if outside is not None:
         overlay = np.zeros(outside.shape + (4,))
         overlay[outside] = (0.5, 0.5, 0.5, 0.4)
         ax.imshow(overlay, origin="lower", extent=extent(r), aspect="auto", interpolation="nearest")
     for line in references.lines(r):
-        ax.plot(line["x"], line["y"], color=line.get("colour", "black"), linewidth=line.get("width", 1),
+        ax.plot(line["x"], line["y"], color=colour or line.get("colour", "black"), linewidth=line.get("width", 1),
                 linestyle=line["style"])
     x0, x1, y0, y1 = extent(r)
     ax.set_xlim(x0, x1); ax.set_ylim(y0, y1)
 
 
-def reference_handles(r):
-    return [Line2D([], [], color=line.get("colour", "black"), linewidth=line.get("width", 1),
+def reference_handles(r, colour=None):
+    return [Line2D([], [], color=colour or line.get("colour", "black"), linewidth=line.get("width", 1),
                    linestyle=line["style"], label=line["label"])
             for line in references.lines(r) if line["label"]]
 
@@ -123,52 +129,70 @@ def plot_side_by_side(left, right, r, scheme, titles, filename):
 
 
 def draw_hatch(ax, mask, r):
-    # hatch the grid points where mask is True, with a thin black outline; cell centres as imshow places
-    # them over extent(r)
+    # hatch the grid cells where mask is True and outline the hatched area along the cell edges; cells as
+    # imshow places them over extent(r)
     x0, x1, y0, y1 = extent(r)
     rows, cols = mask.shape
-    X, Y = np.meshgrid(x0 + (np.arange(cols) + 0.5) * (x1 - x0) / cols, y0 + (np.arange(rows) + 0.5) * (y1 - y0) / rows)
-    ax.contourf(X, Y, mask.astype(float), levels=[-0.5, 0.5, 1.5], hatches=["", "///"], colors="none")
-    if mask.any() and not mask.all():
-        ax.contour(X, Y, mask.astype(float), levels=[0.5], colors="black", linewidths=0.6)
+    w, h = (x1 - x0) / cols, (y1 - y0) / rows
+    padded = np.pad(mask, 1)
+    edges = []
+    for i, j in zip(*np.nonzero(mask)):
+        x, y = x0 + j * w, y0 + i * h
+        cell = Rectangle((x, y), w, h, fill=False, hatch="//", edgecolor=HATCH_COLOUR, linewidth=0)
+        cell.set_hatch_linewidth(1.2)
+        ax.add_patch(cell)
+        for di, dj, edge in [(-1, 0, [(x, y), (x + w, y)]), (1, 0, [(x, y + h), (x + w, y + h)]),
+                             (0, -1, [(x, y), (x, y + h)]), (0, 1, [(x + w, y), (x + w, y + h)])]:
+            if not padded[i + 1 + di, j + 1 + dj]:                # a neighbour outside the area
+                edges.append(edge)
+    ax.add_collection(LineCollection(edges, colors=HATCH_COLOUR, linewidths=1.5))
 
 
-def plot_scale(values, r, scheme, title, filename, relative_to=None, point=None, hatch=None):
+def plot_scale(values, r, scheme, filename, relative_to=None, point=None, hatch=None):
     # relative_to: a description of the reference (e.g. "p = 1, q = 1") when values are differences
     # from it; then a diverging colour map centred on 0 with symmetric limits. point: the reference is
     # this grid point ({grid parameter: value}) in each panel: teal-orange, and a cross marks it.
-    # hatch: (mask (panel a, panel b, row, column), legend label): hatch the grid points where mask is True
+    # hatch: (mask (panel a, panel b, row, column), legend label): hatch the grid points where mask is True.
+    # The colour bar carries the scheme's short label, and its ends (scheme "ends") at vmin and vmax
     label = scheme.get("label", "").format(scale=references.investment_scale(r)[1])
-    cmap = None
+    ends = None
     if relative_to:
         largest = np.nanmax(np.abs(values)) if np.isfinite(values).any() else 0.0
         vmin, vmax = -(largest or 1.0), largest or 1.0
-        cmap, label = TEAL_ORANGE if point else "RdBu_r", f"{label}, minus at {relative_to}"
+        cmap, label = TEAL_ORANGE if point else "RdBu_r", f"{label}: change from {relative_to}"
     else:
         vmin, vmax = scheme["range"](r) if callable(scheme.get("range")) else scheme.get("range", (None, None))
-        if "colours" in scheme:
-            cmap = LinearSegmentedColormap.from_list(scheme["label"], scheme["colours"])
+        cmap = LinearSegmentedColormap.from_list(label, scheme["colours"]) if "colours" in scheme else SEQUENTIAL
+        ends = scheme.get("ends")
     cmap = plt.get_cmap(cmap).copy()
-    cmap.set_bad("lightgrey")                                           # NaN: no value (e.g. nobody invests)
+    cmap.set_bad(NAN_COLOUR)                                            # NaN: no value (e.g. nobody invests)
     fig = plt.figure(figsize=figure_size(r))
     axes, each = panel_axes(fig, r)
     for ax, i, j in each:
         im = ax.imshow(values[i, j], origin="lower", extent=extent(r), aspect="auto",
                        interpolation="nearest", vmin=vmin, vmax=vmax, cmap=cmap)
-        draw_reference(ax, r)
+        draw_reference(ax, r, REFERENCE_GREY)
         if point:
             (y, x) = r["grid_names"]
             ax.plot(point[x], point[y], marker="x", color="black", markersize=6, markeredgewidth=1.5)
         if hatch is not None:
             draw_hatch(ax, hatch[0][i, j], r)
-    fig.suptitle(title, fontsize=11)
-    fig.colorbar(im, ax=axes, label=label)
-    handles = reference_handles(r)
+        for side in ["top", "right"]:
+            ax.spines[side].set_visible(False)
+    bar = fig.colorbar(im, ax=axes, shrink=0.8)
+    bar.set_label(label, fontsize=10)
+    bar.outline.set_visible(False)
+    if ends:                            # words at the two ends instead of numbers there
+        low, high = im.get_clim()
+        ticks = [t for t in bar.get_ticks() if low < t < high]
+        bar.set_ticks([low, *ticks, high], labels=[ends[0], *[f"{t:g}" for t in ticks], ends[1]])
+    handles = reference_handles(r, REFERENCE_GREY)
     if hatch is not None:
-        handles.append(Patch(facecolor="none", edgecolor="black", hatch="///", label=hatch[1]))
+        handles.append(Patch(facecolor="none", edgecolor=HATCH_COLOUR, hatch="//", linewidth=1.5, label=hatch[1]))
     if handles:
-        fig.legend(handles=handles, loc="lower left", fontsize=8)
-    save(fig, filename)
+        fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.45, 0.02), ncol=len(handles),
+                   fontsize=9, frameon=False)
+    save(fig, filename, bbox_inches="tight")
 
 
 # ---------- summary: one small grid per condition, one cell per panel ----------
