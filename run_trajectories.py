@@ -1,16 +1,18 @@
 # How the population evolves over time for a few (p, q) conditions, in the style of DHK's Fig. 1 time
 # panels. Runs are recorded after every chunk and held at their final state up to a common end time
 # (the longest run's finishing time by default). Three figures:
-#   trajectories_time_<tag>.png:   one run per condition, from --start; the split x1 - x2 against time
-#                                  (linear to 1, log after) per condition, with the totals shared or as strips
+#   trajectories_time_<tag>.png:   one run per condition, from --start; each group's difference
+#                                  x1 - x2 against time (linear to 1, log after), with the totals
+#                                  x1 + x2 shared or as strips
 #   trajectories_goods_<tag>.png:  the same runs: each group's x1 (blue) and x2 (red) against time
 #   trajectories_plane_<tag>.png:  each condition's runs (its own plane starts), as paths in the
 #                                  (x1, x2) plane
-# and the recorded data of the time and plane runs as a .npz next to their figures. Lines are coloured by lean, as wide as the
-# group's share, and a black diamond marks each split. See USAGE.md.
+# and the recorded data of the time and plane runs as a .npz next to their figures. Lines are coloured
+# by lean, as wide as the group's share, and a black diamond marks each split. See USAGE.md.
 #
 # Usage:  python run_trajectories.py                       (totals shared)
 #         python run_trajectories.py --total strips --start 0.1,0.02
+#         python run_trajectories.py --plane-diff 0.01       (plane starts x1 - x2 = +-0.01)
 #         python run_trajectories.py --end-time 200          (default: the longest run's finishing time)
 #         in Colab: %run run_trajectories.py
 
@@ -36,9 +38,17 @@ SETTINGS = dict(tol=1e-5, chunk=20)       # chunk: steps between records (20 ste
 # figure A: every run starts at --start (default START), total 0.16
 START = (0.155, 0.005)
 
-# figure B's starts, all with total 0.16; the balanced one is exactly on the diagonal (the engine's
-# saddle push and split test take it off)
-GOOD_1, BALANCED, GOOD_2 = (0.11, 0.05), (0.08, 0.08), (0.05, 0.11)
+# figure B's starts: total 0.16, and x1 - x2 = +D (towards good 1), 0 (balanced) or -D (towards good 2),
+# with D from --plane-diff (default PLANE_DIFF). The balanced one is exactly on the diagonal (the
+# engine's saddle push and split test take it off)
+PLANE_TOTAL, PLANE_DIFF = 0.16, 0.06
+GOOD_1, BALANCED, GOOD_2 = "towards good 1", "balanced", "towards good 2"
+
+
+def plane_starts(diff):
+    half = PLANE_TOTAL / 2
+    return {GOOD_1: (half + diff / 2, half - diff / 2), BALANCED: (half, half), GOOD_2: (half - diff / 2, half + diff / 2)}
+
 
 # all figures: (p, q), title and figure B's starts (all three with --plane-starts all), one column
 # (A, C) or panel (B) each
@@ -49,7 +59,7 @@ CONDITIONS = [((1.0, 1.0),   "arithmetic mean",            [GOOD_1, BALANCED, GO
               ((1.05, 0.95), "both favour concentration",  [GOOD_1, GOOD_2]),
               ((0.9, 0.92),  "division of labour",         [GOOD_1, BALANCED, GOOD_2])]
 
-SPLIT_LIMIT = 0.3                    # figure A: the split panels' x-axis, -0.3 to 0.3
+DIFF_LIMIT = 0.3                     # figure A: the difference x1 - x2 from -0.3 to 0.3
 PLANE_LIMIT = 0.3                    # figure B: x1 and x2 from 0 to 0.3
 ARROW_TIMES = [0.5, 2, 8, 32, 128]   # figure B: arrowheads where each group is at these times
 TOTAL_STYLES = ["-", "--", ":", "-.", (0, (5, 1, 1, 1, 1, 1)), (0, (1, 3))]   # figure A, shared totals
@@ -187,13 +197,13 @@ def split_legend(fig, extra=()):
 def lean_bar(fig, cax):
     bar = fig.colorbar(ScalarMappable(norm=Normalize(-1, 1), cmap=LEAN), cax=fig.add_axes(cax))
     bar.set_ticks([-1, 0, 1], labels=["all good 2", "equal", "all good 1"])
-    bar.set_label("lean in investment", fontsize=8)
+    bar.set_label("lean", fontsize=8)
     bar.ax.tick_params(labelsize=7)
 
 
 # ---------- figure A: time panels ----------
 
-def plot_time(data, total, start, filename):
+def plot_time(data, total, filename):
     runs = [rs[0] for rs in data]
     t_max = max(r["times"][-1] for r in runs)
     n, strips = len(runs), total == "strips"
@@ -210,8 +220,8 @@ def plot_time(data, total, start, filename):
         draw(ax, r, lambda x, k: (x[0] - x[1], r["times"][k]))
         ax.axvline(0, color="black", linestyle="--", linewidth=0.6)
         ax.set_yscale(**TIME_AXIS)
-        ax.set(xlim=(-SPLIT_LIMIT, SPLIT_LIMIT), ylim=(0, t_max))
-        ax.set_xlabel("difference in investment\n(x1 \u2212 x2)", fontsize=8)
+        ax.set(xlim=(-DIFF_LIMIT, DIFF_LIMIT), ylim=(0, t_max))
+        ax.set_xlabel("difference", fontsize=8)
         ax.set_ylabel("time" if c == 0 else "")
         ax.tick_params(labelsize=7)
         ax.set_title(title(pq, name), fontsize=9, loc="left" if strips else "center")
@@ -219,7 +229,7 @@ def plot_time(data, total, start, filename):
             strip = fig.add_subplot(grid[0, 3 * c + 1], sharey=ax)
             draw(strip, r, lambda x, k: (x[0] + x[1], r["times"][k]), colour="grey")
             strip.set_xlim(0, 1.1 * max(np.max(r["xs"].sum(axis=-1)) for r in runs))
-            strip.set_xlabel("total investment\n(x1 + x2)", fontsize=8)
+            strip.set_xlabel("total", fontsize=8)
             strip.tick_params(labelsize=7, labelleft=False)
 
     if not strips:
@@ -230,13 +240,11 @@ def plot_time(data, total, start, filename):
         ax.set_xscale(**TIME_AXIS)
         ax.set(xlim=(0, t_max), ylim=(min(mean_total(r)[0] for r in runs) - 0.01, None))
         ax.set_xlabel("time")
-        ax.set_ylabel("total investment\n(x1 + x2)", fontsize=8)
+        ax.set_ylabel("total", fontsize=8)
         ax.tick_params(labelsize=7)
         ax.legend(fontsize=7, frameon=False, ncol=2)
     split_legend(fig)
     lean_bar(fig, [0.95, 0.45, 0.008, 0.35])
-    fig.suptitle(f"All runs start at ({start[0]:g}, {start[1]:g}), towards good 1. Time: linear to 1, log after.",
-                 fontsize=10)
     plots.save(fig, filename)
 
 
@@ -271,15 +279,12 @@ def plot_goods(data, filename):
     split_legend(fig, [Line2D([], [], color=c, alpha=GOOD_ALPHA, linewidth=2.5, label=l)
                        for c, l in zip(GOOD_COLOURS, ["good 1", "good 2"])]
                  + [Line2D([], [], color=blend, linewidth=2.5, label="overlap (purple)")])
-    fig.text(0.5, 0.02, "Each group's investment in good 1 (blue) and good 2 (red); purple where they overlap. "
-             "In division of labour, the purple lines are one group's good 1 overlapping the other group's good 2.",
-             ha="center", fontsize=9, wrap=True)
     plots.save(fig, filename)
 
 
 # ---------- figure B: investment plane ----------
 
-def plot_plane(data, filename, all_starts):
+def plot_plane(data, filename):
     # two rows of three panels
     fig, axes = plt.subplots(2, 3, figsize=(11, 8.6))
     fig.subplots_adjust(left=0.06, right=0.86, top=0.9, bottom=0.08, wspace=0.3, hspace=0.4)
@@ -309,8 +314,6 @@ def plot_plane(data, filename, all_starts):
 
     split_legend(fig)
     lean_bar(fig, [0.9, 0.3, 0.015, 0.4])
-    where = "" if all_starts else " (arithmetic mean and division of labour only)"
-    fig.suptitle(f"Starts: towards good 1 {GOOD_1}, towards good 2 {GOOD_2}, balanced {BALANCED}{where}", fontsize=10)
     plots.save(fig, filename)
 
 
@@ -333,6 +336,9 @@ if __name__ == "__main__":
     parser.add_argument("--plane-starts", choices=["listed", "all"], default="listed",
                         help="figure B: each condition's own starts (balanced only in arithmetic mean and "
                              "division of labour), or all three starts in every panel")
+    parser.add_argument("--plane-diff", type=float, default=PLANE_DIFF, metavar="D",
+                        help=f"figure B: x1 - x2 of the offset starts, +D and -D, total {PLANE_TOTAL:g} "
+                             f"(default {PLANE_DIFF:g})")
     parser.add_argument("--end-time", type=float, help="hold every run's final state up to this time "
                                                        "(default: the longest run's finishing time)")
     args = parser.parse_args()
@@ -343,18 +349,19 @@ if __name__ == "__main__":
     base += [f"p{p:g}-q{q:g}" for (p, q), *_ in CONDITIONS]
     goods_tag = "_".join(base + [f"start-{start[0]:g}-{start[1]:g}"] + end)
     time_tag = "_".join(base + [f"start-{start[0]:g}-{start[1]:g}", f"total-{args.total}"] + end)
-    plane_tag = "_".join(base + (["starts-all"] if args.plane_starts == "all" else []) + end)
+    plane_tag = "_".join(base + ([f"diff{args.plane_diff:g}"] if args.plane_diff != PLANE_DIFF else [])
+                         + (["starts-all"] if args.plane_starts == "all" else []) + end)
     print("running on:", jax.devices())
 
     data = simulate([(pq, [start]) for pq, _, _ in CONDITIONS], args.end_time)
     save_data(data, CONDITIONS, f"trajectories_time_{time_tag}.npz")
-    plot_time(data, args.total, start, f"trajectories_time_{time_tag}.png")
+    plot_time(data, args.total, f"trajectories_time_{time_tag}.png")
     plot_goods(data, f"trajectories_goods_{goods_tag}.png")
     print_final(data, CONDITIONS)
 
-    all_starts = args.plane_starts == "all"
-    data = simulate([(pq, [GOOD_1, BALANCED, GOOD_2] if all_starts else starts) for pq, _, starts in CONDITIONS],
-                    args.end_time)
+    at = plane_starts(args.plane_diff)
+    names = lambda starts: [GOOD_1, BALANCED, GOOD_2] if args.plane_starts == "all" else starts
+    data = simulate([(pq, [at[name] for name in names(starts)]) for pq, _, starts in CONDITIONS], args.end_time)
     save_data(data, CONDITIONS, f"trajectories_plane_{plane_tag}.npz")
-    plot_plane(data, f"trajectories_plane_{plane_tag}.png", all_starts)
+    plot_plane(data, f"trajectories_plane_{plane_tag}.png")
     print_final(data, CONDITIONS)

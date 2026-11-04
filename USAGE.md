@@ -202,13 +202,13 @@ The same works for any two runs on the same grid, e.g. with and without `--flat-
 How the population evolves over time for a few (p, q) conditions, in the style of DHK's Fig. 1 time panels. Makes three figures.
 
 ```
-python run_trajectories.py [--start X1,X2] [--total shared|strips] [--plane-starts listed|all] [--end-time T]
+python run_trajectories.py [--start X1,X2] [--total shared|strips] [--plane-starts listed|all] [--plane-diff D] [--end-time T]
 ```
 
 - Quadratic model with the flat benefit, `tol = 1e-5`, DHK's ESS point B converted: b1' = 7/4.6, b2' = 1.5.
 - Runs are recorded every 20 steps (0.2 time units) through `engine.simulate`'s `record` argument.
 - Each run is held at its final state up to a common end time, `--end-time` (default: the longest run's finishing time), so all lines reach the end.
-- Lines are coloured by lean in investment, (x1 − x2)/(x1 + x2): red for all good 2, purple for equal, blue for all good 1. Figures A and B have a colour bar for it.
+- Lean is (x1 − x2)/(x1 + x2), from −1 (all good 2) to +1 (all good 1). Lines are coloured by it: red, purple at 0, blue. Figures A and B have a colour bar for it. The figures have no overall title.
 - Line width is 0.6 + 2.4 × share pt, so the branches after a split are thinner. Each branch forks from its parent.
 - A black diamond marks every split, where the parent was. A split is a group appearing in an empty slot; a saddle push is not marked.
 - The division-of-labour panels have a third title line, `p < q < (p+1)/2`, the part of the rule they satisfy.
@@ -216,10 +216,10 @@ python run_trajectories.py [--start X1,X2] [--total shared|strips] [--plane-star
 **Conditions (all figures, `CONDITIONS`):** (1, 1) arithmetic mean, (0.95, 1) benefit favours balance, (0.95, 1.05) both favour balance, (1, 0.95) cost favours concentration, (1.05, 0.95) both favour concentration, (0.9, 0.92) division of labour.
 
 **Figure A, `trajectories_time_<tag>.png`:** one run per condition, all from `--start` (default 0.155, 0.005: x1 − x2 = 0.15, total 0.16).
-- The title says the start. Every line starts at time 0 at its initial values. The time axis is linear from 0 to 1 and logarithmic after (symlog).
-- Per column, the difference in investment (x1 − x2), from −0.3 to 0.3, with a dashed line at 0, time going up.
-- `--total shared` (default) adds one panel below all the columns, with every condition's total investment (x1 + x2, share-weighted) overlaid in its own line style. Its y-axis starts just below the initial total.
-- `--total strips` instead puts a narrow grey total investment panel beside each difference panel.
+- Every line starts at time 0 at its initial values. The time axis is linear from 0 to 1 and logarithmic after (symlog).
+- Per column, each group's difference x1 − x2, from −0.3 to 0.3, with a dashed line at 0, time going up. The lines are coloured by lean. At p = q = 1 the difference stays fixed while the total grows, so the lean (difference / total) shrinks; that's why the axis shows the difference.
+- `--total shared` (default) adds one panel below all the columns, with every condition's total x1 + x2 (share-weighted) overlaid in its own line style. Its y-axis starts just below the initial total.
+- `--total strips` instead puts a narrow grey total panel beside each difference panel.
 
 **Figure C, `trajectories_goods_<tag>.png`:** the same runs as figure A, one panel per condition.
 - Each group's good-1 investment x1 (blue) and good-2 investment x2 (red), from 0 to 0.3, against the same time axis as figure A (time going up, from 0).
@@ -227,9 +227,9 @@ python run_trajectories.py [--start X1,X2] [--total shared|strips] [--plane-star
 - Diamonds mark the splits; the legend shows good 1, good 2, overlap and split.
 
 **Figure B, `trajectories_plane_<tag>.png`:** the same six conditions in two rows of three, each with its own starts, all with total 0.16.
-- Starts: towards good 1 (0.11, 0.05), balanced (0.08, 0.08), towards good 2 (0.05, 0.11). The balanced start is exactly on the diagonal; the engine's saddle push and split test take it off.
+- Starts, all with total 0.16: towards good 1 (x1 − x2 = +D), balanced (0.08, 0.08), towards good 2 (x1 − x2 = −D). D is `--plane-diff` (default 0.06: (0.11, 0.05) and (0.05, 0.11)). A non-default D adds `_diff<D>` to the file names. The balanced start is exactly on the diagonal; the engine's saddle push and split test take it off.
 - `--plane-starts listed` (default): arithmetic mean and division of labour use all three starts, the generalist and specialist panels only the two offset ones. `--plane-starts all`: all three starts in every panel (adds `_starts-all` to the file names).
-- The title lists the starts. Each panel shows x1 across and x2 up, from 0 to 0.3, with a faint diagonal x1 = x2.
+- Each panel shows x1 across and x2 up, from 0 to 0.3, with a faint diagonal x1 = x2.
 - Paths have arrowheads. Each start is a hollow circle, and each group's end is a dot sized by share. The colour bar for lean is on the right.
 
 `CONDITIONS` and the starts are at the top of the script. The recorded data are saved next to each figure as `trajectories_time_<tag>.npz` and `trajectories_plane_<tag>.npz`. These hold `times_<c>_<s>`, `xs_<c>_<s>` and `fs_<c>_<s>` per condition c and start s, with the held last frame. The meta includes the starts and finishing times.
