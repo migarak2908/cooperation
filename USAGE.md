@@ -230,7 +230,7 @@ python run_trajectories.py [--start X1,X2] [--total shared|strips] [--plane-star
 - Starts, all with total 0.16: towards good 1 (x1 − x2 = +D), balanced (0.08, 0.08), towards good 2 (x1 − x2 = −D). D is `--plane-diff` (default 0.06: (0.11, 0.05) and (0.05, 0.11)). A non-default D adds `_diff<D>` to the file names. The balanced start is exactly on the diagonal; the engine's saddle push and split test take it off.
 - `--plane-starts listed` (default): arithmetic mean and division of labour use all three starts, the generalist and specialist panels only the two offset ones. `--plane-starts all`: all three starts in every panel (adds `_starts-all` to the file names).
 - Each panel shows x1 across and x2 up, from 0 to 0.3, with a faint diagonal x1 = x2.
-- Paths have arrowheads. Each start is a hollow circle, and each group's end is a dot sized by share. The colour bar for lean is on the right.
+- Paths have arrowheads. Each start is a hollow circle, and each group's end is a dot sized by share; both are in the legend with the split diamond. The colour bar for lean is on the right.
 
 `CONDITIONS` and the starts are at the top of the script. The recorded data are saved next to each figure as `trajectories_time_<tag>.npz` and `trajectories_plane_<tag>.npz`. These hold `times_<c>_<s>`, `xs_<c>_<s>` and `fs_<c>_<s>` per condition c and start s, with the held last frame. The meta includes the starts and finishing times.
 

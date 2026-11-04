@@ -312,7 +312,10 @@ def plot_plane(data, filename):
         ax.tick_params(labelsize=7)
         ax.set_title(title(pq, name), fontsize=9)
 
-    split_legend(fig)
+    split_legend(fig, [Line2D([], [], marker="o", markersize=5, markerfacecolor="none", markeredgecolor="black",
+                              linestyle="none", label="start"),
+                       Line2D([], [], marker="o", markersize=7, markerfacecolor="#7F77DD", markeredgecolor="black",
+                              linestyle="none", label="end (size = share)")])
     lean_bar(fig, [0.9, 0.3, 0.015, 0.4])
     plots.save(fig, filename)
 
