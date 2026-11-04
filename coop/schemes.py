@@ -328,7 +328,7 @@ def check_dhk_type(r):
 # kind: "categories" or "scale". Optional: check (run first), and for categories colours (a fixed
 # legend) and compare (run on the unfiltered grid labels: the model's analytic prediction); for a
 # scale, label (may use {scale}), range ((vmin, vmax), or a function of r giving it) and colours (a
-# diverging map's colours from vmin to vmax; default viridis)
+# diverging map's colours from vmin to vmax; default viridis); short: a name for legends (--hatch)
 
 SCHEMES = {
     "cc_dc_dd":          dict(kind="categories", outcome=cc_dc_dd, colours=cc_dc_dd_colours,
@@ -338,8 +338,10 @@ SCHEMES = {
     "mean_investment":   dict(kind="scale", outcome=mean_investment, label="mean investment / {scale}",
                               range=lambda r: (0, references.investment_scale(r)[2])),
     "division_of_labour_index": dict(kind="scale", outcome=division_of_labour_index, check=check_division_of_labour_index,
+                                     short="division of labour",
                                      label="division-of-labour score (1 = clean division of labour)", range=(0, 1)),
     "individual":        dict(kind="scale", outcome=individual, check=check_lopsidedness, range=(0, 1),
+                              colours=["#EEEEEE", "#3C1361"],             # light grey to dark purple
                               label="individual lopsidedness (0 = invests equally in both goods, 1 = in one only)"),
     "population":        dict(kind="scale", outcome=population, check=check_lopsidedness, range=(0, 1),
                               label="population lopsidedness (0 = goods balanced overall, 1 = one good only)"),

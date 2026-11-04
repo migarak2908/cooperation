@@ -12,6 +12,8 @@
 #                                                                  (minus that grid point, in each panel)
 #         python run_analysis.py RESULTS.npz --summary             (fraction of each panel meeting SUMMARIES)
 #         python run_analysis.py RESULTS.npz --starts 0 3          (only the runs from starts 0 and 3)
+#         python run_analysis.py RESULTS.npz --scheme individual --hatch division_of_labour_index:0.5
+#                                                                  (hatch where that scheme is above 0.5)
 #         in Colab: %run run_analysis.py RESULTS.npz
 
 import argparse
@@ -112,12 +114,26 @@ def relative_point(values, r, point):
     return values - values[:, :, index(y, y_axis), index(x, x_axis)][:, :, None, None]
 
 
-def analyse(r, name, relative_to=None, point=None):
+def hatch_mask(r, hatch):
+    # hatch = (scheme, threshold): where that scheme, averaged over starts, is above threshold (NaN: not),
+    # and its legend label
+    name, threshold = hatch
+    if SCHEMES[name]["kind"] != "scale":
+        raise SystemExit(f"--hatch needs a scale scheme, not {name}")
+    with np.errstate(invalid="ignore"):
+        mask = average_over_starts(SCHEMES[name]["outcome"](r["xs"], r["fs"], r)) > threshold
+    return mask, f"{SCHEMES[name].get('short', name)} (score > {threshold:g})"
+
+
+def analyse(r, name, relative_to=None, point=None, hatch=None):
     scheme = SCHEMES[name]
     values = scheme["outcome"](r["xs"], r["fs"], r)            # (start, panel a, panel b, row, column)
     base = f"{name}_{r['tag']}"
     if schemes.invested_rule(r) != schemes.default_rule(r):
         base += f"_invested-{schemes.invested_rule(r)}"         # not the model's default rule
+    if hatch and scheme["kind"] == "scale":
+        base += f"_hatch-{hatch[0]}"
+        hatch = hatch_mask(r, hatch)
 
     # 1. checks of the scheme on hand-made cases
     if "check" in scheme:
@@ -131,17 +147,18 @@ def analyse(r, name, relative_to=None, point=None):
             suffix = "-".join(f"{k}{v:g}" for k, v in point.items())
             plots.plot_scale(relative_point(averaged, r, point), r, scheme,
                              f"{name}, averaged over starts, minus at {describe(point)} in each panel - {r['tag']}",
-                             f"{base}_relpt-{suffix}.png", relative_to=describe(point), point=point)
+                             f"{base}_relpt-{suffix}.png", relative_to=describe(point), point=point, hatch=hatch)
         elif relative_to:
             suffix = "-".join(f"{k}{v:g}" for k, v in relative_to.items())
             plots.plot_scale(relative(averaged, r, relative_to), r, scheme,
                              f"{name}, averaged over starts, minus at {describe(relative_to)} - {r['tag']}",
-                             f"{base}_rel-{suffix}.png", relative_to=describe(relative_to))
+                             f"{base}_rel-{suffix}.png", relative_to=describe(relative_to), hatch=hatch)
         else:
-            plots.plot_scale(averaged, r, scheme, f"{name}, averaged over starts - {r['tag']}", f"{base}.png")
+            plots.plot_scale(averaged, r, scheme, f"{name}, averaged over starts - {r['tag']}", f"{base}.png",
+                             hatch=hatch)
         return
-    if relative_to or point:
-        print(f"(--relative-to and --relative-to-point apply to scale schemes only; {name} is plotted as usual)")
+    if relative_to or point or hatch:
+        print(f"(--relative-to, --relative-to-point and --hatch apply to scale schemes only; {name} is plotted as usual)")
 
     # 3. categories: grid labels, and a filtered version with rare labels replaced
     labels_raw = schemes.grid_labels(values)                  # (panel a, panel b, row, column)
@@ -222,6 +239,9 @@ if __name__ == "__main__":
     parser.add_argument("--relative-to-point", metavar="NAME=V,NAME=V",
                         help="scale schemes: plot each grid point minus the grid point with these values, "
                              "in the same panel, e.g. p=1,q=1 on a (p, q) grid")
+    parser.add_argument("--hatch", metavar="SCHEME:THRESHOLD",
+                        help="scale schemes: hatch the grid points where SCHEME (averaged over starts) is above "
+                             "THRESHOLD, e.g. division_of_labour_index:0.5")
     parser.add_argument("--summary", action="store_true", help="fraction of each panel meeting each SUMMARIES condition")
     parser.add_argument("--starts", nargs="+", type=int, metavar="I",
                         help="analyse only the runs from these starts (indices into the results' starts), e.g. 0 3")
@@ -235,6 +255,12 @@ if __name__ == "__main__":
     point = parse_values(args.relative_to_point) if args.relative_to_point else None
     if relative_to and point:
         raise SystemExit("give --relative-to or --relative-to-point, not both")
+    hatch = None
+    if args.hatch:
+        hatch_name, threshold = args.hatch.split(":")
+        if hatch_name not in SCHEMES:
+            raise SystemExit(f"--hatch: no scheme {hatch_name!r} (schemes: {', '.join(SCHEMES)})")
+        hatch = (hatch_name, float(threshold))
     names = args.scheme or ([] if args.cut is not None or args.summary else default_schemes(r))
     if args.cut is not None:
         plots.plot_cut(r, args.cut)
@@ -249,4 +275,4 @@ if __name__ == "__main__":
     else:
         for name in names:
             print(f"\n---------- {name} ----------")
-            analyse(r, name, relative_to, point)
+            analyse(r, name, relative_to, point, hatch)

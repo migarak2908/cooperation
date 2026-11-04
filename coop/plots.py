@@ -122,10 +122,22 @@ def plot_side_by_side(left, right, r, scheme, titles, filename):
     save(fig, filename)
 
 
-def plot_scale(values, r, scheme, title, filename, relative_to=None, point=None):
+def draw_hatch(ax, mask, r):
+    # hatch the grid points where mask is True, with a thin black outline; cell centres as imshow places
+    # them over extent(r)
+    x0, x1, y0, y1 = extent(r)
+    rows, cols = mask.shape
+    X, Y = np.meshgrid(x0 + (np.arange(cols) + 0.5) * (x1 - x0) / cols, y0 + (np.arange(rows) + 0.5) * (y1 - y0) / rows)
+    ax.contourf(X, Y, mask.astype(float), levels=[-0.5, 0.5, 1.5], hatches=["", "///"], colors="none")
+    if mask.any() and not mask.all():
+        ax.contour(X, Y, mask.astype(float), levels=[0.5], colors="black", linewidths=0.6)
+
+
+def plot_scale(values, r, scheme, title, filename, relative_to=None, point=None, hatch=None):
     # relative_to: a description of the reference (e.g. "p = 1, q = 1") when values are differences
     # from it; then a diverging colour map centred on 0 with symmetric limits. point: the reference is
-    # this grid point ({grid parameter: value}) in each panel: teal-orange, and a cross marks it
+    # this grid point ({grid parameter: value}) in each panel: teal-orange, and a cross marks it.
+    # hatch: (mask (panel a, panel b, row, column), legend label): hatch the grid points where mask is True
     label = scheme.get("label", "").format(scale=references.investment_scale(r)[1])
     cmap = None
     if relative_to:
@@ -147,10 +159,15 @@ def plot_scale(values, r, scheme, title, filename, relative_to=None, point=None)
         if point:
             (y, x) = r["grid_names"]
             ax.plot(point[x], point[y], marker="x", color="black", markersize=6, markeredgewidth=1.5)
+        if hatch is not None:
+            draw_hatch(ax, hatch[0][i, j], r)
     fig.suptitle(title, fontsize=11)
     fig.colorbar(im, ax=axes, label=label)
-    if reference_handles(r):
-        fig.legend(handles=reference_handles(r), loc="lower left", fontsize=8)
+    handles = reference_handles(r)
+    if hatch is not None:
+        handles.append(Patch(facecolor="none", edgecolor="black", hatch="///", label=hatch[1]))
+    if handles:
+        fig.legend(handles=handles, loc="lower left", fontsize=8)
     save(fig, filename)
 
 
