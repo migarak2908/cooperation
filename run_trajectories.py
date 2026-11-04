@@ -40,8 +40,9 @@ START = (0.155, 0.005)
 # saddle push and split test take it off)
 GOOD_1, BALANCED, GOOD_2 = (0.11, 0.05), (0.08, 0.08), (0.05, 0.11)
 
-# both figures: (p, q), title and figure B's starts, one column (A) or panel (B) each
-CONDITIONS = [((1.0, 1.0),   "DHK",                        [GOOD_1, BALANCED, GOOD_2]),
+# all figures: (p, q), title and figure B's starts (all three with --plane-starts all), one column
+# (A, C) or panel (B) each
+CONDITIONS = [((1.0, 1.0),   "arithmetic mean",            [GOOD_1, BALANCED, GOOD_2]),
               ((0.95, 1.0),  "benefit favours balance",    [GOOD_1, GOOD_2]),
               ((0.95, 1.05), "both favour balance",        [GOOD_1, GOOD_2]),
               ((1.0, 0.95),  "cost favours concentration", [GOOD_1, GOOD_2]),
@@ -183,6 +184,13 @@ def split_legend(fig, extra=()):
                fontsize=8, frameon=False)
 
 
+def lean_bar(fig, cax):
+    bar = fig.colorbar(ScalarMappable(norm=Normalize(-1, 1), cmap=LEAN), cax=fig.add_axes(cax))
+    bar.set_ticks([-1, 0, 1], labels=["all good 2", "equal", "all good 1"])
+    bar.set_label("lean in investment", fontsize=8)
+    bar.ax.tick_params(labelsize=7)
+
+
 # ---------- figure A: time panels ----------
 
 def plot_time(data, total, start, filename):
@@ -192,10 +200,10 @@ def plot_time(data, total, start, filename):
     fig = plt.figure(figsize=(2.9 * n + 0.6, 6.5 if strips else 8.5))
     if strips:          # per condition: split, total (half as wide), gap
         grid = fig.add_gridspec(1, 3 * n - 1, width_ratios=([2, 1, 0.45] * n)[:-1], wspace=0.08,
-                                left=0.05, right=0.98, top=0.8, bottom=0.14)
+                                left=0.05, right=0.93, top=0.8, bottom=0.1)
     else:
         grid = fig.add_gridspec(2, n, height_ratios=[3, 1.2], hspace=0.5, wspace=0.35,
-                                left=0.06, right=0.98, top=0.85, bottom=0.1)
+                                left=0.06, right=0.93, top=0.85, bottom=0.07)
 
     for c, (r, (pq, name, _)) in enumerate(zip(runs, CONDITIONS)):
         ax = fig.add_subplot(grid[0, 3 * c] if strips else grid[0, c])
@@ -203,7 +211,7 @@ def plot_time(data, total, start, filename):
         ax.axvline(0, color="black", linestyle="--", linewidth=0.6)
         ax.set_yscale(**TIME_AXIS)
         ax.set(xlim=(-SPLIT_LIMIT, SPLIT_LIMIT), ylim=(0, t_max))
-        ax.set_xlabel("split x1 - x2", fontsize=8)
+        ax.set_xlabel("difference in investment\n(x1 \u2212 x2)", fontsize=8)
         ax.set_ylabel("time" if c == 0 else "")
         ax.tick_params(labelsize=7)
         ax.set_title(title(pq, name), fontsize=9, loc="left" if strips else "center")
@@ -211,7 +219,7 @@ def plot_time(data, total, start, filename):
             strip = fig.add_subplot(grid[0, 3 * c + 1], sharey=ax)
             draw(strip, r, lambda x, k: (x[0] + x[1], r["times"][k]), colour="grey")
             strip.set_xlim(0, 1.1 * max(np.max(r["xs"].sum(axis=-1)) for r in runs))
-            strip.set_xlabel("total", fontsize=8)
+            strip.set_xlabel("total investment\n(x1 + x2)", fontsize=8)
             strip.tick_params(labelsize=7, labelleft=False)
 
     if not strips:
@@ -222,12 +230,13 @@ def plot_time(data, total, start, filename):
         ax.set_xscale(**TIME_AXIS)
         ax.set(xlim=(0, t_max), ylim=(min(mean_total(r)[0] for r in runs) - 0.01, None))
         ax.set_xlabel("time")
-        ax.set_ylabel("total x1 + x2\n(share-weighted)", fontsize=8)
+        ax.set_ylabel("total investment\n(x1 + x2)", fontsize=8)
         ax.tick_params(labelsize=7)
         ax.legend(fontsize=7, frameon=False, ncol=2)
     split_legend(fig)
-    fig.text(0.5, 0.01, f"All runs start towards good 1 (x1 − x2 = {start[0] - start[1]:g}). "
-             "Time in model units, linear up to 1, log after.", ha="center", fontsize=9)
+    lean_bar(fig, [0.95, 0.45, 0.008, 0.35])
+    fig.suptitle(f"All runs start at ({start[0]:g}, {start[1]:g}), towards good 1. Time: linear to 1, log after.",
+                 fontsize=10)
     plots.save(fig, filename)
 
 
@@ -270,17 +279,14 @@ def plot_goods(data, filename):
 
 # ---------- figure B: investment plane ----------
 
-def plot_plane(data, filename):
-    # two rows of three panels; same-total line: the final total of the balanced DHK run
-    dhk = data[[pq for pq, *_ in CONDITIONS].index((1.0, 1.0))]
-    same_total = mean_total(next(r for r in dhk if r["start"] == BALANCED))[-1]
+def plot_plane(data, filename, all_starts):
+    # two rows of three panels
     fig, axes = plt.subplots(2, 3, figsize=(11, 8.6))
     fig.subplots_adjust(left=0.06, right=0.86, top=0.9, bottom=0.08, wspace=0.3, hspace=0.4)
 
     for ax, runs, (pq, name, _) in zip(axes.flat, data, CONDITIONS):
         ax.set(xlim=(0, PLANE_LIMIT), ylim=(0, PLANE_LIMIT), aspect="equal")
         ax.plot([0, PLANE_LIMIT], [0, PLANE_LIMIT], color="grey", linewidth=0.5, alpha=0.5)
-        ax.plot([0, same_total], [same_total, 0], color="grey", linestyle="--", linewidth=0.8)
         for r in runs:
             xs, fs = r["xs"], r["fs"]
             draw(ax, r, lambda x, k: tuple(x))
@@ -301,13 +307,10 @@ def plot_plane(data, filename):
         ax.tick_params(labelsize=7)
         ax.set_title(title(pq, name), fontsize=9)
 
-    split_legend(fig, [Line2D([], [], color="grey", linestyle="--", linewidth=0.8, label="same total as p = q = 1")])
-    bar = fig.colorbar(ScalarMappable(norm=Normalize(-1, 1), cmap=LEAN), cax=fig.add_axes([0.9, 0.3, 0.015, 0.4]))
-    bar.set_ticks([-1, 0, 1], labels=["all good 2", "equal", "all good 1"])
-    bar.set_label("lean (x1 - x2) / (x1 + x2)", fontsize=8)
-    bar.ax.tick_params(labelsize=7)
-    fig.text(0.5, 0.02, "Starts: towards good 1, towards good 2 and (DHK, division of labour) balanced.",
-             ha="center", fontsize=9)
+    split_legend(fig)
+    lean_bar(fig, [0.9, 0.3, 0.015, 0.4])
+    where = "" if all_starts else " (arithmetic mean and division of labour only)"
+    fig.suptitle(f"Starts: towards good 1 {GOOD_1}, towards good 2 {GOOD_2}, balanced {BALANCED}{where}", fontsize=10)
     plots.save(fig, filename)
 
 
@@ -327,6 +330,9 @@ if __name__ == "__main__":
                         help=f"figure A: the start of every run (default {START[0]:g},{START[1]:g})")
     parser.add_argument("--total", choices=["shared", "strips"], default="shared",
                         help="figure A: totals in one panel below all columns, or as a narrow strip beside each")
+    parser.add_argument("--plane-starts", choices=["listed", "all"], default="listed",
+                        help="figure B: each condition's own starts (balanced only in arithmetic mean and "
+                             "division of labour), or all three starts in every panel")
     parser.add_argument("--end-time", type=float, help="hold every run's final state up to this time "
                                                        "(default: the longest run's finishing time)")
     args = parser.parse_args()
@@ -337,7 +343,7 @@ if __name__ == "__main__":
     base += [f"p{p:g}-q{q:g}" for (p, q), *_ in CONDITIONS]
     goods_tag = "_".join(base + [f"start-{start[0]:g}-{start[1]:g}"] + end)
     time_tag = "_".join(base + [f"start-{start[0]:g}-{start[1]:g}", f"total-{args.total}"] + end)
-    plane_tag = "_".join(base + end)
+    plane_tag = "_".join(base + (["starts-all"] if args.plane_starts == "all" else []) + end)
     print("running on:", jax.devices())
 
     data = simulate([(pq, [start]) for pq, _, _ in CONDITIONS], args.end_time)
@@ -346,7 +352,9 @@ if __name__ == "__main__":
     plot_goods(data, f"trajectories_goods_{goods_tag}.png")
     print_final(data, CONDITIONS)
 
-    data = simulate([(pq, starts) for pq, _, starts in CONDITIONS], args.end_time)
+    all_starts = args.plane_starts == "all"
+    data = simulate([(pq, [GOOD_1, BALANCED, GOOD_2] if all_starts else starts) for pq, _, starts in CONDITIONS],
+                    args.end_time)
     save_data(data, CONDITIONS, f"trajectories_plane_{plane_tag}.npz")
-    plot_plane(data, f"trajectories_plane_{plane_tag}.png")
+    plot_plane(data, f"trajectories_plane_{plane_tag}.png", all_starts)
     print_final(data, CONDITIONS)
