@@ -12,6 +12,7 @@ UPDATE_FRACTION = 0.01               # share of the population updated at once (
 MUTATION_PROB = 0.01                 # per trait
 MUTATION_STD = 0.005
 X_MAX = 0.5
+START = (0.1, 0.4)                   # every individual's (trait 1, trait 2) at generation 0
 
 
 prm = {"b1": 7 / 4.6, "b2": 1.5, "p": 0.98, "q": 0.984}
@@ -90,8 +91,7 @@ def main_sim(key, alpha, sigma, mu, pop0, prm, x_max, n_records, record_every, u
 
 if __name__ == "__main__":
     key = jax.random.key(0)
-    key, subkey = jax.random.split(key)
-    pop0 = jax.random.uniform(subkey, (POP_SIZE, TRAITS), jnp.float32, 0, X_MAX)
+    pop0 = jnp.tile(jnp.array(START, jnp.float32), (POP_SIZE, 1))
     alpha = payoff_range(prm, X_MAX)
     print("running on:", jax.devices())
     print(f"alpha = {alpha:.4f}")
@@ -99,5 +99,5 @@ if __name__ == "__main__":
     history = main_sim(key, alpha, MUTATION_STD, MUTATION_PROB, pop0, prm, X_MAX,
                        GENERATIONS // RECORD_EVERY, RECORD_EVERY, UPDATE_FRACTION)
     np.savez("individual_sim.npz", history=np.asarray(history), pop0=np.asarray(pop0), alpha=alpha,
-             record_every=RECORD_EVERY, update_fraction=UPDATE_FRACTION, **prm)
-    print("saved individual_sim.npz")
+             record_every=RECORD_EVERY, update_fraction=UPDATE_FRACTION, x_max=X_MAX, **prm)
+    print("saved individual_sim.npz\nnext: python run_analysis.py individual_sim.npz")

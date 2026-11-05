@@ -4,7 +4,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, ListedColormap
+from matplotlib.colors import LinearSegmentedColormap, ListedColormap, to_rgb
 from matplotlib.lines import Line2D
 from matplotlib.collections import LineCollection
 from matplotlib.patches import Patch, Rectangle
@@ -12,6 +12,7 @@ from matplotlib.patches import Patch, Rectangle
 from coop import references
 
 OTHER_COLOUR = "#9e9e9e"
+GOOD_COLOURS = ["#378ADD", "#E24B4A"]   # good 1 blue, good 2 red, in every figure
 # differences from a grid point: teal negative, white 0, orange positive (red and blue mean the goods)
 TEAL_ORANGE = LinearSegmentedColormap.from_list("teal_orange", ["#0F7B7B", "#FFFFFF", "#E07B00"])
 # scale plots: one hue, light (low) to dark (high), away from the goods' red and blue; NaN in grey
@@ -177,3 +178,28 @@ def plot_scale(values, r, scheme, filename, relative_to=None, point=None, hatch=
                    fontsize=9, frameon=False)
     save(fig, filename, bbox_inches="tight")
 
+
+# ---------- individual-based simulation: the population across generations ----------
+
+def plot_population(history, record_every, x_max, filename, bins=100):
+    # history: (record, individual, trait), from generation 0. For each trait, the share of the
+    # population at each investment against generation, good 1 blue and good 2 red, translucent so
+    # they blend to purple where they overlap
+    step = record_every
+    extent = [-step / 2, (len(history) - 0.5) * step, 0, x_max]
+    edges = np.linspace(0, x_max, bins + 1)
+    fig, ax = plt.subplots(figsize=(9, 4.5))
+    for good, colour in enumerate(GOOD_COLOURS):
+        counts = np.array([np.histogram(pop[:, good], edges)[0] for pop in history])
+        image = np.zeros((bins, len(history), 4))
+        image[..., :3] = to_rgb(colour)
+        image[..., 3] = np.sqrt(counts.T / history.shape[1])       # square root: small groups still show
+        ax.imshow(image, origin="lower", extent=extent, aspect="auto", interpolation="nearest")
+    ax.set_xlim(extent[:2])
+    ax.set_xlabel("generation")
+    ax.set_ylabel("investment")
+    for side in ["top", "right"]:
+        ax.spines[side].set_visible(False)
+    ax.legend(handles=[Patch(color=c, label=f"good {g + 1}") for g, c in enumerate(GOOD_COLOURS)],
+              frameon=False, fontsize=9)
+    save(fig, filename, bbox_inches="tight")

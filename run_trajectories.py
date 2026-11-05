@@ -67,7 +67,7 @@ ARROW_TIMES = [0.5, 2, 8, 32, 128]   # figure B: arrowheads where each group is 
 TOTAL_STYLES = ["-", "--", ":", "-.", (0, (5, 1, 1, 1, 1, 1)), (0, (1, 3))]   # figure A, shared totals
 LEAN = LinearSegmentedColormap.from_list("lean", ["#E24B4A", "#7F77DD", "#378ADD"])   # lean -1, 0, +1
 SPLIT_MARK = dict(marker="D", color="black", markersize=6, linestyle="none", zorder=5)
-GOOD_COLOURS, GOOD_ALPHA = ["#378ADD", "#E24B4A"], 0.55   # figure C: good 1 blue, good 2 red, translucent
+GOOD_ALPHA = 0.55                                         # figure C: the goods' lines are translucent
 TIME_AXIS = dict(value="symlog", linthresh=1)             # time from 0: linear up to 1, logarithmic after
 
 
@@ -262,7 +262,7 @@ def plot_goods(data, filename):
     for ax, r, (pq, name, _) in zip(axes, runs, CONDITIONS):
         xs, fs, times = r["xs"], r["fs"], r["times"]
         paths, splits = paths_and_splits(r)
-        for good, colour in enumerate(GOOD_COLOURS):
+        for good, colour in enumerate(plots.GOOD_COLOURS):
             ax.add_collection(LineCollection([[(xs[k, i, good], times[k]) for k, i in path] for path in paths],
                                              colors=colour, alpha=GOOD_ALPHA, capstyle="butt",
                                              linewidths=[width(fs[path[-1]]) for path in paths]))
@@ -276,10 +276,10 @@ def plot_goods(data, filename):
     axes[0].set_ylabel("time")
 
     blend = np.array([1.0, 1.0, 1.0])               # the legend's purple: red over blue over white
-    for colour in GOOD_COLOURS:
+    for colour in plots.GOOD_COLOURS:
         blend = (1 - GOOD_ALPHA) * blend + GOOD_ALPHA * np.array(to_rgb(colour))
     split_legend(fig, [Line2D([], [], color=c, alpha=GOOD_ALPHA, linewidth=2.5, label=l)
-                       for c, l in zip(GOOD_COLOURS, ["good 1", "good 2"])]
+                       for c, l in zip(plots.GOOD_COLOURS, ["good 1", "good 2"])]
                  + [Line2D([], [], color=blend, linewidth=2.5, label="overlap (purple)")])
     plots.save(fig, filename)
 

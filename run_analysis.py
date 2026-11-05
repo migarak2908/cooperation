@@ -11,6 +11,8 @@
 #         python run_analysis.py RESULTS.npz --starts 0 3          (only the runs from starts 0 and 3)
 #         python run_analysis.py RESULTS.npz --scheme individual --hatch division_of_labour_index:0.5
 #                                                                  (hatch where that scheme is above 0.5)
+#         python run_analysis.py individual_sim.npz                (from run_individual_sim.py: the
+#                                                                  population across generations)
 #         in Colab: %run run_analysis.py RESULTS.npz
 
 import argparse
@@ -121,6 +123,13 @@ def hatch_mask(r, hatch):
     return mask, SCHEMES[name].get("short", f"{name} > {threshold:g}")
 
 
+def plot_individual(name):
+    # a file from run_individual_sim.py: each trait's distribution across generations
+    with np.load(name) as f:
+        history = np.concatenate([f["pop0"][None], f["history"]])          # generation 0 first
+        plots.plot_population(history, int(f["record_every"]), float(f["x_max"]), name.replace(".npz", ".png"))
+
+
 def analyse(r, name, relative_to=None, point=None, hatch=None):
     scheme = SCHEMES[name]
     values = scheme["outcome"](r["xs"], r["fs"], r)            # (start, panel a, panel b, row, column)
@@ -188,6 +197,12 @@ if __name__ == "__main__":
     parser.add_argument("--starts", nargs="+", type=int, metavar="I",
                         help="analyse only the runs from these starts (indices into the results' starts), e.g. 0 3")
     args = parser.parse_args()
+    if args.results:
+        with np.load(args.results) as f:
+            individual_based = "history" in f.files
+        if individual_based:
+            plot_individual(args.results)
+            raise SystemExit
 
     r = results.load(args.results)
     r["invested_rule"] = args.invested

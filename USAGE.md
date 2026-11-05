@@ -185,6 +185,20 @@ python run_trajectories.py [--start X1,X2] [--total shared|strips] [--plane-star
 
 `conditions` and the starts are at the top of the script. The recorded data are saved next to each figure as `trajectories_time_<tag>.npz` and `trajectories_plane_<tag>.npz`. These hold `times_<c>_<s>`, `xs_<c>_<s>` and `fs_<c>_<s>` per condition c and start s, with the held last frame. The meta includes the starts and finishing times.
 
+## run_individual_sim.py
+
+An individual-based version: a population of `POP_SIZE` individuals, each with two traits (its investment in each good), all starting at `START` = (0.1, 0.4). Each generation every individual is replaced once: it copies a randomly chosen other individual with probability w = (P_y − P_x)/α, clipped to [0, 1], where each payoff comes from one interaction with a random partner (never itself), and α is the payoff range. Each trait of the offspring mutates with probability `MUTATION_PROB`, by a normal step of sd `MUTATION_STD`. The payoff is the quadratic model with the flat benefit, b1' = 7/4.6, b2' = 1.5. Settings are at the top of the script.
+
+- `UPDATE_FRACTION`: the share of the population updated at once, all reading the population as it was before the batch; `1 / POP_SIZE` is one at a time, `1` all at once. Larger batches run faster.
+- `RECORD_EVERY`: the population is saved every this many generations, to `individual_sim.npz`.
+
+```
+python run_individual_sim.py
+python run_analysis.py individual_sim.npz      # individual_sim.png
+```
+
+The figure shows, for each trait, the share of the population at each investment against generation: good 1 blue, good 2 red, translucent so they blend to purple where they overlap. Shading is the square root of the share, so small groups still show.
+
 ## One-good scripts
 
 The scripts in `single_good/` are small and self-contained; run them directly:
