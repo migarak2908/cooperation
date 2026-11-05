@@ -74,16 +74,24 @@ def lines(r):
 
 
 def layer_lines(r):
-    # quadratic (b1', b2') grid, for the layers figure: b1' = 1; b2' = b1'/2 for b1' >= 1; b2' = 1/2;
-    # b2' = 1; and b2' = b1' - 1/2, where x* = (b1' - 1) / (4 b2' - 2) = 0.25
+    # quadratic (b1', b2') grid, for the layers figure: b2' = b1' - 1/2 (for b1' >= 1.5), where
+    # x* = (b1' - 1) / (4 b2' - 2) = 0.25, so full specialisation is possible above it; b2' = 1; b2' = 1/2
     y_axis, x_axis = r["grid_axes"]
-    b = x_axis
-    above_one = b[b >= 1]
-    return [dict(x=[1, 1], y=[y_axis[0], y_axis[-1]], style=(0, (4, 2)), label="b1' = 1"),
-            dict(x=above_one, y=above_one / 2, style=(0, (1, 1.5)), label="b2' = b1'/2"),
-            dict(x=[b[0], b[-1]], y=[0.5, 0.5], style=(0, (6, 2, 1, 2)), label="b2' = 1/2"),
-            dict(x=[b[0], b[-1]], y=[1, 1], style=(0, (3, 1, 1, 1, 1, 1)), label="b2' = 1"),
-            dict(x=b, y=b - 0.5, style=(0, (8, 3)), label="b2' = b1' - 1/2 (x* = 0.25)")]
+    ends = [x_axis[0], x_axis[-1]]
+    b = np.array([1.5, x_axis[-1]])
+    return [dict(x=b, y=b - 0.5, style="--", label="x* = 0.25: full specialisation possible above"),
+            dict(x=ends, y=[1, 1], style=":", label="b2' = 1"),
+            dict(x=ends, y=[0.5, 0.5], style="-.", label="b2' = 1/2")]
+
+
+def predicted_outcome(p, q):
+    # the division-of-labour rule's prediction for a (p, q) panel
+    if p == q == 1:
+        return "DHK"
+    if q < p:
+        return "specialists"
+    return "division of labour" if q < (p + 1) / 2 else "generalists"
+
 
 def band_lines(b, x_max):
     # quadratic one-good reference lines, from B(z) = b1' z - b2' z^2 and x* = (b1' - 1) / (4 b2' - 2):

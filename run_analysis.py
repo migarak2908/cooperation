@@ -22,7 +22,7 @@ import warnings
 import numpy as np
 
 from coop import layers, plots, references, results, schemes
-from coop.results import panel_index
+from coop.results import panel_index, panel_value
 from coop.schemes import SCHEMES, RARE_FRAC
 
 
@@ -161,7 +161,9 @@ def analyse_layers(r):
     if ij and between.any():
         print(f"\nspecialisation at p = 1, q = 1 over {int(between.sum())} 'in between' points: "
               f"mean {layer['specialisation'][ij][between].mean():.3f} (about 0 expected from balanced starts)")
-    plots.plot_layers(layer, r, references.layer_lines(r), f"layers_{r['tag']}.png", panel_names(r))
+    titles = {(i, j): f"{panel}: {references.predicted_outcome(panel_value(r, 'p', i, j), panel_value(r, 'q', i, j))}"
+              for (i, j), panel in panel_names(r).items()}
+    plots.plot_layers(layer, r, references.layer_lines(r), f"layers_{r['tag']}.png", titles)
 
 
 def analyse(r, name, relative_to=None, point=None, hatch=None):

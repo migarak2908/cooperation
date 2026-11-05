@@ -2,6 +2,7 @@
 # the grid, with the model's reference lines. Figures are saved to files and closed, never shown.
 # Needs numpy and matplotlib only (no jax).
 
+import textwrap
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap, to_rgb, to_rgba
@@ -20,12 +21,17 @@ SEQUENTIAL = LinearSegmentedColormap.from_list("sequential", ["#F5F2EA", "#9FCBB
 NAN_COLOUR = "#CFCFCF"
 HATCH_COLOUR = "#E8A33D"             # --hatch: amber lines and outline, clear on both ends of SEQUENTIAL
 REFERENCE_GREY = "#7A7A7A"           # scale plots: reference lines, visible on both ends of SEQUENTIAL
-# layers figure: total investment in greys ("in between" in purple by specialisation), branching as patterns
-LEVEL_COLOURS = {"defection": "#E4E4E4", "bistable": "#A8A8A8", "full": "#5E5E5E", "start-dependent": "#FFFFFF"}
-SPECIALISATION = LinearSegmentedColormap.from_list("specialisation", ["#F1ECF7", "#A48CC9", "#3F1F6E"])
+# layers figure: total investment in white and greys, "in between" in purple by specialisation (light
+# purple when balanced, so it stands apart from white defection); reference lines, the branching outline
+# and its patterns in orange, visible on white, grey and purple
+LEVEL_COLOURS = {"defection": "#FFFFFF", "bistable": "#A8A8A8", "full": "#5E5E5E", "start-dependent": "#FFFFFF"}
+SPECIALISATION = LinearSegmentedColormap.from_list("specialisation", ["#CECBF6", "#8A7FD8", "#2E2470"])
 KIND_HATCHES = {"between goods": "///", "in total": "..", "mixed": "///.."}
 THREE_HATCH = "xx"
-LAYER_LINE_COLOUR = "#333333"
+LAYER_ORANGE = "#E8850C"
+LAYERS_CAPTION = ("Overlapping patterns: both kinds of branching. Specialists are fully specialised only where "
+                  "x* < 0.25 (above the dashed line); below it they also invest in the second good, so the shade "
+                  "is lighter. A few points in the division-of-labour panel have three groups.")
 
 
 def save(fig, filename, **options):
@@ -229,10 +235,25 @@ def mark_unknown(ax, X, Y, mask):
 
 
 def plot_layers(layer, r, lines, filename, panel_titles):
-    # layer: coop.layers.layers(r); lines: reference lines (references.layer_lines); panel_titles: {(i, j): title}
+    # layer: coop.layers.layers(r); lines: reference lines (references.layer_lines); panel_titles: {(i, j): title}.
+    # Drawn and saved inside rc_context, as the hatch colour is read when the figure is drawn
+    with plt.rc_context({"hatch.color": LAYER_ORANGE}):
+        fig = plt.figure(figsize=figure_size(r))
+        axes, image = draw_layer_panels(fig, layer, r, lines, panel_titles)
+        bar = fig.colorbar(image, ax=axes, shrink=0.6)
+        bar.set_label("individual specialisation", fontsize=10)
+        bar.set_ticks([0, 0.5, 1], labels=["balanced", "0.5", "specialised"])
+        bar.outline.set_visible(False)
+        for k, (title, handles) in enumerate(layer_legend(layer, lines).items()):
+            fig.legend(handles=handles, title=title, loc="upper left", bbox_to_anchor=(0.1 + 0.22 * k, 0.04),
+                       frameon=False, fontsize=8, title_fontsize=9, alignment="left")
+        fig.text(0.1, -0.04, textwrap.fill(LAYERS_CAPTION, 150), fontsize=9, va="top")
+        save(fig, filename, bbox_inches="tight")
+
+
+def draw_layer_panels(fig, layer, r, lines, panel_titles):
     y_axis, x_axis = r["grid_axes"]
     X, Y = np.meshgrid(x_axis, y_axis)
-    fig = plt.figure(figsize=figure_size(r))
     axes, each = panel_axes(fig, r)
     for ax, i, j in each:
         level, kind = layer["level"][i, j], layer["kind"][i, j]
@@ -244,37 +265,29 @@ def plot_layers(layer, r, lines, filename, panel_titles):
         mark_unknown(ax, X, Y, level == "start-dependent")
         branched = kind != "none"
         if branched.any() and not branched.all():
-            ax.contour(X, Y, branched.astype(float), levels=[0.5], colors="black", linewidths=0.7)
+            ax.contour(X, Y, branched.astype(float), levels=[0.5], colors=LAYER_ORANGE, linewidths=0.8)
         for name, hatch in KIND_HATCHES.items():
             draw_pattern(ax, X, Y, kind == name, hatch)
         draw_pattern(ax, X, Y, layer["three"][i, j], THREE_HATCH)
         for line in lines:
-            ax.plot(line["x"], line["y"], color=LAYER_LINE_COLOUR, linewidth=0.7, linestyle=line["style"])
+            ax.plot(line["x"], line["y"], color=LAYER_ORANGE, linewidth=0.9, linestyle=line["style"])
         x0, x1, y0, y1 = extent(r)
         ax.set_xlim(x0, x1); ax.set_ylim(y0, y1)
         ax.set_title(panel_titles[i, j], fontsize=10)
+    return axes, image
 
-    bar = fig.colorbar(image, ax=axes, shrink=0.6)
-    bar.set_label("individual specialisation", fontsize=10)
-    bar.set_ticks([0, 0.5, 1], labels=["balanced", "0.5", "specialised"])
-    bar.outline.set_visible(False)
 
-    hatched = lambda hatch, label: Patch(facecolor="white", edgecolor="black", hatch=hatch, linewidth=0.5, label=label)
-    blocks = {
-        "Total investment": [Patch(color=LEVEL_COLOURS["defection"], label="defection"),
-                             Patch(color=LEVEL_COLOURS["bistable"], label="bistable"),
-                             Patch(color=LEVEL_COLOURS["full"], label="full"),
-                             Patch(facecolor="white", edgecolor="grey", linewidth=0.5, label="start-dependent (?)"),
-                             Patch(color=SPECIALISATION(0.5), label="in between (purple: specialisation)")],
-        "Branching": [Line2D([], [], color="black", linewidth=0.7, label="branched (outline)"),
-                      hatched(KIND_HATCHES["between goods"], "between goods"),
-                      hatched(KIND_HATCHES["in total"], "in total"),
-                      hatched(KIND_HATCHES["mixed"], "mixed"),
-                      hatched(THREE_HATCH, "three or more groups")],
-        "Reference lines": [Line2D([], [], color=LAYER_LINE_COLOUR, linewidth=0.7, linestyle=line["style"],
-                                   label=line["label"]) for line in lines],
-    }
-    for k, (title, handles) in enumerate(blocks.items()):
-        fig.legend(handles=handles, title=title, loc="upper left", bbox_to_anchor=(0.05 + 0.27 * k, 0.04),
-                   frameon=False, fontsize=8, title_fontsize=9, alignment="left")
-    save(fig, filename, bbox_inches="tight")
+def layer_legend(layer, lines):
+    # three blocks, each with only the entries that occur
+    levels, kinds = set(layer["level"].ravel()), set(layer["kind"].ravel())
+    box = lambda colour, label: Patch(facecolor=colour, edgecolor="grey", linewidth=0.5, label=label)
+    hatched = lambda hatch, label: Patch(facecolor="white", edgecolor=LAYER_ORANGE, hatch=hatch, linewidth=0.5,
+                                         label=label)
+    total = [box(LEVEL_COLOURS[l], l if l != "full" else "full investment")
+             for l in ["defection", "bistable", "full"] if l in levels]
+    branching = ([Line2D([], [], color=LAYER_ORANGE, linewidth=0.8, label="branched")] if kinds - {"none"} else [])
+    branching += [hatched(KIND_HATCHES[k], k) for k in ["between goods", "in total"] if {k, "mixed"} & kinds]
+    references = [Line2D([], [], color=LAYER_ORANGE, linewidth=0.9, linestyle=line["style"], label=line["label"])
+                  for line in lines]
+    return {title: handles for title, handles in [("Total investment", total), ("Branching", branching),
+                                                  ("Reference lines", references)] if handles}
