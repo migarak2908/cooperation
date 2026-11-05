@@ -73,6 +73,18 @@ def lines(r):
     return []
 
 
+def layer_lines(r):
+    # quadratic (b1', b2') grid, for the layers figure: b1' = 1; b2' = b1'/2 for b1' >= 1; b2' = 1/2;
+    # b2' = 1; and b2' = b1' - 1/2, where x* = (b1' - 1) / (4 b2' - 2) = 0.25
+    y_axis, x_axis = r["grid_axes"]
+    b = x_axis
+    above_one = b[b >= 1]
+    return [dict(x=[1, 1], y=[y_axis[0], y_axis[-1]], style=(0, (4, 2)), label="b1' = 1"),
+            dict(x=above_one, y=above_one / 2, style=(0, (1, 1.5)), label="b2' = b1'/2"),
+            dict(x=[b[0], b[-1]], y=[0.5, 0.5], style=(0, (6, 2, 1, 2)), label="b2' = 1/2"),
+            dict(x=[b[0], b[-1]], y=[1, 1], style=(0, (3, 1, 1, 1, 1, 1)), label="b2' = 1"),
+            dict(x=b, y=b - 0.5, style=(0, (8, 3)), label="b2' = b1' - 1/2 (x* = 0.25)")]
+
 def band_lines(b, x_max):
     # quadratic one-good reference lines, from B(z) = b1' z - b2' z^2 and x* = (b1' - 1) / (4 b2' - 2):
     #   upper: benefit still increasing at the largest pair total 2 x_max (valid below it)

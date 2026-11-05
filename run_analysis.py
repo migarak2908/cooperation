@@ -11,6 +11,8 @@
 #         python run_analysis.py RESULTS.npz --starts 0 3          (only the runs from starts 0 and 3)
 #         python run_analysis.py RESULTS.npz --scheme individual --hatch division_of_labour_index:0.5
 #                                                                  (hatch where that scheme is above 0.5)
+#         python run_analysis.py RESULTS.npz --layers              (quadratic b1_b2: total investment,
+#                                                                  specialisation and branching in one figure)
 #         python run_analysis.py individual_sim.npz                (from run_individual_sim.py: the
 #                                                                  population across generations)
 #         in Colab: %run run_analysis.py RESULTS.npz
@@ -19,7 +21,8 @@ import argparse
 import warnings
 import numpy as np
 
-from coop import plots, references, results, schemes
+from coop import layers, plots, references, results, schemes
+from coop.results import panel_index
 from coop.schemes import SCHEMES, RARE_FRAC
 
 
@@ -130,6 +133,37 @@ def plot_individual(name):
         plots.plot_population(history, int(f["record_every"]), float(f["x_max"]), name.replace(".npz", ".png"))
 
 
+def analyse_layers(r):
+    # the layers figure for the quadratic b1_b2 sweep, with per-panel counts, a robustness check and a
+    # sanity check of the specialisation at p = q = 1
+    if r["model"] != "quadratic" or references.grid(r) != ("b2", "b1"):
+        raise SystemExit("--layers is for the quadratic model's (b1', b2') grid")
+    print("layers checks:"); layers.check_layers(r)
+    layer = layers.layers(r)
+    print("\nlayers per panel (from starts 0 and 3):")
+    for (i, j), panel in panel_names(r).items():
+        level, kind = layer["level"][i, j], layer["kind"][i, j]
+        print(f"{panel}:")
+        print("  level:    " + ", ".join(f"{l} {int((level == l).sum())}" for l in layers.LEVELS))
+        print("  branched: " + ", ".join(f"{k} {int((kind == k).sum())}" for k in layers.KINDS[1:])
+              + f"; three or more groups {int(layer['three'][i, j].sum())}")
+
+    print("\nrobustness: points whose level / branching kind changes with every tolerance halved, doubled")
+    tolerances = (layers.EDGE, layers.SAME_TOTAL, layers.LEAN_TOL)
+    scaled = {factor: layers.layers(r, *(factor * tol for tol in tolerances)) for factor in [0.5, 2]}
+    for ij, panel in panel_names(r).items():
+        changes = [f"x {factor:g}: {int((s['level'][ij] != layer['level'][ij]).sum())} / "
+                   f"{int((s['kind'][ij] != layer['kind'][ij]).sum())}" for factor, s in scaled.items()]
+        print(f"  {panel:22s}" + "   ".join(changes))
+
+    ij = panel_index(r, p=1.0, q=1.0)
+    between = layer["level"][ij] == "in between" if ij else None
+    if ij and between.any():
+        print(f"\nspecialisation at p = 1, q = 1 over {int(between.sum())} 'in between' points: "
+              f"mean {layer['specialisation'][ij][between].mean():.3f} (about 0 expected from balanced starts)")
+    plots.plot_layers(layer, r, references.layer_lines(r), f"layers_{r['tag']}.png", panel_names(r))
+
+
 def analyse(r, name, relative_to=None, point=None, hatch=None):
     scheme = SCHEMES[name]
     values = scheme["outcome"](r["xs"], r["fs"], r)            # (start, panel a, panel b, row, column)
@@ -194,6 +228,9 @@ if __name__ == "__main__":
     parser.add_argument("--hatch", metavar="SCHEME:THRESHOLD",
                         help="scale schemes: hatch the grid points where SCHEME (averaged over starts) is above "
                              "THRESHOLD, e.g. division_of_labour_index:0.5")
+    parser.add_argument("--layers", action="store_true",
+                        help="quadratic b1_b2: total investment, specialisation and branching in one figure, "
+                             "from the balanced starts 0 and 3")
     parser.add_argument("--starts", nargs="+", type=int, metavar="I",
                         help="analyse only the runs from these starts (indices into the results' starts), e.g. 0 3")
     args = parser.parse_args()
@@ -218,6 +255,10 @@ if __name__ == "__main__":
         if hatch_name not in SCHEMES:
             raise SystemExit(f"--hatch: no scheme {hatch_name!r} (schemes: {', '.join(SCHEMES)})")
         hatch = (hatch_name, float(threshold))
-    for name in args.scheme or default_schemes(r):
+    if args.layers:
+        if args.starts:
+            raise SystemExit("--layers uses the balanced starts 0 and 3 itself: leave out --starts")
+        analyse_layers(r)
+    for name in args.scheme or ([] if args.layers else default_schemes(r)):
         print(f"\n---------- {name} ----------")
         analyse(r, name, relative_to, point, hatch)

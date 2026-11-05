@@ -146,7 +146,19 @@ A scale scheme gives one figure, `<scheme>_<tag>.png`, averaged over starts. It 
 | `--relative-to NAME=V[,NAME=V]` | scale schemes: each panel minus the panel with these values at the same grid point (after averaging over starts), on a blue-red scale centred on 0; e.g. `p=1,q=1`. A parameter left out keeps each panel's own value. Adds `_rel-p1-q1` to the figure name |
 | `--relative-to-point NAME=V,NAME=V` | scale schemes: each grid point minus the grid point with these grid-parameter values in the same panel (after averaging over starts), e.g. `p=1,q=1` on a (p, q) grid. Both grid parameters are needed, and the grid must have exactly those values (else it stops and lists them). Diverging teal (negative), white (0), orange (positive) scale with symmetric limits; red and blue are kept for the goods. A black cross marks the reference point. Adds `_relpt-p1-q1` to the figure name. Not with `--relative-to` |
 | `--hatch SCHEME:THRESHOLD` | scale schemes: hatch the grid cells where another scale scheme, averaged over starts (NaN ignored), is above THRESHOLD, e.g. `--hatch division_of_labour_index:0.5`: groups specialised in opposite goods. The cells get amber `//` lines with an amber outline along the cell edges, and the legend says "division of labour" (or `<scheme> > <threshold>` for a scheme without a short name). Works with `--relative-to` and `--relative-to-point`. Adds `_hatch-<scheme>` to the figure name |
+| `--layers` | quadratic `b1_b2`: total investment, specialisation and branching in one figure, from the balanced starts; see [Layers](#layers---layers) |
 | `--starts I [I ...]` | use only the runs from these starts (indices into the results' starts: 0 = (lo, lo), 1 = (lo, hi), 2 = (hi, lo), 3 = (hi, hi)) for everything: scales, labels, `--relative-to`, `--hatch`. E.g. `--starts 0 3` keeps the two balanced starts, so a lean comes from selection, not from the start. Adds `_starts-0-3` to the figure names; the simulation is unchanged |
+
+### Layers (`--layers`)
+
+`python run_analysis.py RESULTS.npz --layers` draws `layers_<tag>.png` for the quadratic `b1_b2` sweep: total investment, specialisation and branching in one figure. It uses the two balanced starts, 0 = (lo, lo) and 3 = (hi, hi), and stops if the file doesn't have them (so not with `--start` or `--starts`). With each counted group's share f, total t = x1 + x2, lean L = (x1 − x2)/t, and top = 2 `x_max`; tolerances `EDGE = 0.01`, `SAME_TOTAL = 0.05` and `LEAN_TOL = 0.02` are at the top of `coop/layers.py`.
+
+- **Layer 1, total investment (region colour).** Per run, the share-weighted mean total m is defection (m < EDGE·top), full (m > (1 − EDGE)·top) or in between. A grid point takes that label if both starts agree, `bistable` if one is defection and the other full, and `start-dependent` otherwise. Colours: defection light grey, bistable mid grey, full dark grey, start-dependent white with a grey "?" in each region.
+- **Layer 2, specialisation (in-between points only).** Share-weighted mean |L|, averaged over the two starts, on a purple scale from very pale (0: every individual invests equally in both goods) to dark (1: in one good only), with the colour bar "individual specialisation".
+- **Layer 3, branching (outline and pattern).** A point is branched if both starts end with two or more counted groups; branched regions get a thin black outline. Inside, judged on start 0 (`mixed` if the starts disagree): `///` between goods (group totals within SAME_TOTAL·top, and groups leaning to opposite goods by more than LEAN_TOL), `..` in total (totals differ by more than SAME_TOTAL·top, and no two groups lean to opposite goods), `///..` mixed (anything else), and `xx` on top where either start has three or more groups.
+- Every panel has thin dashed reference lines (b1′ = 1; b2′ = b1′/2 for b1′ ≥ 1; b2′ = 1/2; b2′ = 1; b2′ = b1′ − 1/2, where x* = 0.25) and a p, q title. The legend has three blocks: Total investment, Branching and Reference lines.
+
+It prints check cases, per panel the counts of each level and of branched points by kind (and with three or more groups), how many points change level or kind per panel with every tolerance halved and doubled, and the p = 1, q = 1 panel's mean specialisation over in-between points (about 0 from balanced starts).
 
 ## run_trajectories.py
 
@@ -234,6 +246,7 @@ coop/
   results.py            saving and loading results files
   schemes.py            labelling schemes
   references.py         theory: x*, reference lines, predictions
+  layers.py             the --layers figure's labels and checks
   plots.py              figures
 single_good/            the one-good scripts
 archive/                old scripts kept for reference

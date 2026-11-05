@@ -4,7 +4,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, ListedColormap, to_rgb
+from matplotlib.colors import LinearSegmentedColormap, ListedColormap, to_rgb, to_rgba
 from matplotlib.lines import Line2D
 from matplotlib.collections import LineCollection
 from matplotlib.patches import Patch, Rectangle
@@ -20,6 +20,12 @@ SEQUENTIAL = LinearSegmentedColormap.from_list("sequential", ["#F5F2EA", "#9FCBB
 NAN_COLOUR = "#CFCFCF"
 HATCH_COLOUR = "#E8A33D"             # --hatch: amber lines and outline, clear on both ends of SEQUENTIAL
 REFERENCE_GREY = "#7A7A7A"           # scale plots: reference lines, visible on both ends of SEQUENTIAL
+# layers figure: total investment in greys ("in between" in purple by specialisation), branching as patterns
+LEVEL_COLOURS = {"defection": "#E4E4E4", "bistable": "#A8A8A8", "full": "#5E5E5E", "start-dependent": "#FFFFFF"}
+SPECIALISATION = LinearSegmentedColormap.from_list("specialisation", ["#F1ECF7", "#A48CC9", "#3F1F6E"])
+KIND_HATCHES = {"between goods": "///", "in total": "..", "mixed": "///.."}
+THREE_HATCH = "xx"
+LAYER_LINE_COLOUR = "#333333"
 
 
 def save(fig, filename, **options):
@@ -202,4 +208,73 @@ def plot_population(history, record_every, x_max, filename, bins=100):
         ax.spines[side].set_visible(False)
     ax.legend(handles=[Patch(color=c, label=f"good {g + 1}") for g, c in enumerate(GOOD_COLOURS)],
               frameon=False, fontsize=9)
+    save(fig, filename, bbox_inches="tight")
+
+
+# ---------- layers: total investment, specialisation and branching in one figure ----------
+
+def draw_pattern(ax, X, Y, mask, hatch):
+    # hatch the region where mask is True, without filling it
+    if mask.any():
+        ax.contourf(X, Y, mask.astype(float), levels=[0.5, 1.5], colors="none", hatches=[hatch])
+
+
+def mark_unknown(ax, X, Y, mask):
+    # a grey "?" at the centre of each connected region where mask is True
+    from scipy import ndimage
+    regions, n = ndimage.label(mask)
+    for i, j in ndimage.center_of_mass(mask, regions, range(1, n + 1)):
+        ax.text(np.interp(j, np.arange(X.shape[1]), X[0]), np.interp(i, np.arange(Y.shape[0]), Y[:, 0]), "?",
+                color="grey", fontsize=8, ha="center", va="center")
+
+
+def plot_layers(layer, r, lines, filename, panel_titles):
+    # layer: coop.layers.layers(r); lines: reference lines (references.layer_lines); panel_titles: {(i, j): title}
+    y_axis, x_axis = r["grid_axes"]
+    X, Y = np.meshgrid(x_axis, y_axis)
+    fig = plt.figure(figsize=figure_size(r))
+    axes, each = panel_axes(fig, r)
+    for ax, i, j in each:
+        level, kind = layer["level"][i, j], layer["kind"][i, j]
+        greys = np.array([to_rgba(LEVEL_COLOURS.get(l, "none")) for l in level.ravel()]).reshape(level.shape + (4,))
+        ax.imshow(greys, origin="lower", extent=extent(r), aspect="auto", interpolation="nearest")
+        between = np.ma.masked_where(level != "in between", layer["specialisation"][i, j])
+        image = ax.imshow(between, origin="lower", extent=extent(r), aspect="auto", interpolation="nearest",
+                          cmap=SPECIALISATION, vmin=0, vmax=1)
+        mark_unknown(ax, X, Y, level == "start-dependent")
+        branched = kind != "none"
+        if branched.any() and not branched.all():
+            ax.contour(X, Y, branched.astype(float), levels=[0.5], colors="black", linewidths=0.7)
+        for name, hatch in KIND_HATCHES.items():
+            draw_pattern(ax, X, Y, kind == name, hatch)
+        draw_pattern(ax, X, Y, layer["three"][i, j], THREE_HATCH)
+        for line in lines:
+            ax.plot(line["x"], line["y"], color=LAYER_LINE_COLOUR, linewidth=0.7, linestyle=line["style"])
+        x0, x1, y0, y1 = extent(r)
+        ax.set_xlim(x0, x1); ax.set_ylim(y0, y1)
+        ax.set_title(panel_titles[i, j], fontsize=10)
+
+    bar = fig.colorbar(image, ax=axes, shrink=0.6)
+    bar.set_label("individual specialisation", fontsize=10)
+    bar.set_ticks([0, 0.5, 1], labels=["balanced", "0.5", "specialised"])
+    bar.outline.set_visible(False)
+
+    hatched = lambda hatch, label: Patch(facecolor="white", edgecolor="black", hatch=hatch, linewidth=0.5, label=label)
+    blocks = {
+        "Total investment": [Patch(color=LEVEL_COLOURS["defection"], label="defection"),
+                             Patch(color=LEVEL_COLOURS["bistable"], label="bistable"),
+                             Patch(color=LEVEL_COLOURS["full"], label="full"),
+                             Patch(facecolor="white", edgecolor="grey", linewidth=0.5, label="start-dependent (?)"),
+                             Patch(color=SPECIALISATION(0.5), label="in between (purple: specialisation)")],
+        "Branching": [Line2D([], [], color="black", linewidth=0.7, label="branched (outline)"),
+                      hatched(KIND_HATCHES["between goods"], "between goods"),
+                      hatched(KIND_HATCHES["in total"], "in total"),
+                      hatched(KIND_HATCHES["mixed"], "mixed"),
+                      hatched(THREE_HATCH, "three or more groups")],
+        "Reference lines": [Line2D([], [], color=LAYER_LINE_COLOUR, linewidth=0.7, linestyle=line["style"],
+                                   label=line["label"]) for line in lines],
+    }
+    for k, (title, handles) in enumerate(blocks.items()):
+        fig.legend(handles=handles, title=title, loc="upper left", bbox_to_anchor=(0.05 + 0.27 * k, 0.04),
+                   frameon=False, fontsize=8, title_fontsize=9, alignment="left")
     save(fig, filename, bbox_inches="tight")

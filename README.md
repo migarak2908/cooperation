@@ -78,6 +78,7 @@ python run_analysis.py results_<tag>.npz                # labels it and saves th
 | `coop/results.py` | saving and loading results files |
 | `coop/schemes.py` | labelling schemes: what counts as cooperation |
 | `coop/references.py` | theory: `x*`, reference lines, analytic predictions |
+| `coop/layers.py` | the three-layer outcome figure (`run_analysis.py --layers`) |
 | `coop/plots.py` | figures |
 | `single_good/` | small self-contained one-good scripts (analytic phase diagram and simulations) |
 | `archive/two_good_integration_phase.py` | an early two-good version with exactly two groups per run (kept for reference) |
