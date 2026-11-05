@@ -21,14 +21,15 @@ SEQUENTIAL = LinearSegmentedColormap.from_list("sequential", ["#F5F2EA", "#9FCBB
 NAN_COLOUR = "#CFCFCF"
 HATCH_COLOUR = "#E8A33D"             # --hatch: amber lines and outline, clear on both ends of SEQUENTIAL
 REFERENCE_GREY = "#7A7A7A"           # scale plots: reference lines, visible on both ends of SEQUENTIAL
-# layers figure: total investment in white and greys, "in between" in purple by specialisation (light
-# purple when balanced, so it stands apart from white defection); reference lines, the branching outline
-# and its patterns in orange, visible on white, grey and purple
-LEVEL_COLOURS = {"defection": "#FFFFFF", "bistable": "#A8A8A8", "full": "#5E5E5E", "start-dependent": "#FFFFFF"}
-SPECIALISATION = LinearSegmentedColormap.from_list("specialisation", ["#CECBF6", "#8A7FD8", "#2E2470"])
+# layers figure: total investment in white (with a thin grey outline, apart from cream) and greys, "in
+# between" from cream (balanced) to mid teal (specialised), light enough that the black reference lines,
+# branching outline and patterns stay visible on every region
+LEVEL_COLOURS = {"defection": "#FFFFFF", "bistable": "#D3D1C7", "full": "#888780", "start-dependent": "#FFFFFF"}
+SPECIALISATION = LinearSegmentedColormap.from_list("specialisation", ["#F1EFE8", "#1D9E75"])
+DEFECTION_OUTLINE = "#9E9E9E"
 KIND_HATCHES = {"between goods": "///", "in total": "..", "mixed": "///.."}
 THREE_HATCH = "xx"
-LAYER_ORANGE = "#E8850C"
+LAYER_LINE_COLOUR = "black"
 LAYERS_CAPTION = ("Overlapping patterns: both kinds of branching. Specialists are fully specialised only where "
                   "x* < 0.25 (above the dashed line); below it they also invest in the second good, so the shade "
                   "is lighter. A few points in the division-of-labour panel have three groups.")
@@ -237,7 +238,7 @@ def mark_unknown(ax, X, Y, mask):
 def plot_layers(layer, r, lines, filename, panel_titles):
     # layer: coop.layers.layers(r); lines: reference lines (references.layer_lines); panel_titles: {(i, j): title}.
     # Drawn and saved inside rc_context, as the hatch colour is read when the figure is drawn
-    with plt.rc_context({"hatch.color": LAYER_ORANGE}):
+    with plt.rc_context({"hatch.color": LAYER_LINE_COLOUR}):
         fig = plt.figure(figsize=figure_size(r))
         axes, image = draw_layer_panels(fig, layer, r, lines, panel_titles)
         bar = fig.colorbar(image, ax=axes, shrink=0.6)
@@ -262,15 +263,18 @@ def draw_layer_panels(fig, layer, r, lines, panel_titles):
         between = np.ma.masked_where(level != "in between", layer["specialisation"][i, j])
         image = ax.imshow(between, origin="lower", extent=extent(r), aspect="auto", interpolation="nearest",
                           cmap=SPECIALISATION, vmin=0, vmax=1)
+        defection = level == "defection"
+        if defection.any() and not defection.all():
+            ax.contour(X, Y, defection.astype(float), levels=[0.5], colors=DEFECTION_OUTLINE, linewidths=0.5)
         mark_unknown(ax, X, Y, level == "start-dependent")
         branched = kind != "none"
         if branched.any() and not branched.all():
-            ax.contour(X, Y, branched.astype(float), levels=[0.5], colors=LAYER_ORANGE, linewidths=0.8)
+            ax.contour(X, Y, branched.astype(float), levels=[0.5], colors=LAYER_LINE_COLOUR, linewidths=0.8)
         for name, hatch in KIND_HATCHES.items():
             draw_pattern(ax, X, Y, kind == name, hatch)
         draw_pattern(ax, X, Y, layer["three"][i, j], THREE_HATCH)
         for line in lines:
-            ax.plot(line["x"], line["y"], color=LAYER_ORANGE, linewidth=0.9, linestyle=line["style"])
+            ax.plot(line["x"], line["y"], color=LAYER_LINE_COLOUR, linewidth=0.9, linestyle=line["style"])
         x0, x1, y0, y1 = extent(r)
         ax.set_xlim(x0, x1); ax.set_ylim(y0, y1)
         ax.set_title(panel_titles[i, j], fontsize=10)
@@ -281,13 +285,13 @@ def layer_legend(layer, lines):
     # three blocks, each with only the entries that occur
     levels, kinds = set(layer["level"].ravel()), set(layer["kind"].ravel())
     box = lambda colour, label: Patch(facecolor=colour, edgecolor="grey", linewidth=0.5, label=label)
-    hatched = lambda hatch, label: Patch(facecolor="white", edgecolor=LAYER_ORANGE, hatch=hatch, linewidth=0.5,
+    hatched = lambda hatch, label: Patch(facecolor="white", edgecolor=LAYER_LINE_COLOUR, hatch=hatch, linewidth=0.5,
                                          label=label)
     total = [box(LEVEL_COLOURS[l], l if l != "full" else "full investment")
              for l in ["defection", "bistable", "full"] if l in levels]
-    branching = ([Line2D([], [], color=LAYER_ORANGE, linewidth=0.8, label="branched")] if kinds - {"none"} else [])
+    branching = ([Line2D([], [], color=LAYER_LINE_COLOUR, linewidth=0.8, label="branched")] if kinds - {"none"} else [])
     branching += [hatched(KIND_HATCHES[k], k) for k in ["between goods", "in total"] if {k, "mixed"} & kinds]
-    references = [Line2D([], [], color=LAYER_ORANGE, linewidth=0.9, linestyle=line["style"], label=line["label"])
+    references = [Line2D([], [], color=LAYER_LINE_COLOUR, linewidth=0.9, linestyle=line["style"], label=line["label"])
                   for line in lines]
     return {title: handles for title, handles in [("Total investment", total), ("Branching", branching),
                                                   ("Reference lines", references)] if handles}
