@@ -2,7 +2,8 @@
 #   layer 1, level:          the share-weighted mean total m of each run is defection, in between or
 #                            full; a grid point is that if both starts agree, bistable if one start is
 #                            defection and the other full, start-dependent otherwise
-#   layer 2, specialisation: share-weighted mean |lean| over groups, averaged over the two starts
+#   layer 2, specialisation: the individual scheme, sum f |x1 - x2| / sum f t over counted groups,
+#                            averaged over the two starts
 #                            (shown at "in between" points only)
 #   layer 3, branching:      both starts end with 2+ counted groups; how the groups differ (judged on
 #                            start 0, "mixed" if the starts disagree), and whether either has 3+ groups
@@ -11,7 +12,7 @@
 
 import numpy as np
 
-from coop.schemes import counted_groups, state
+from coop.schemes import counted_groups, individual, state
 
 EDGE = 0.01                          # defection: m < EDGE top; full: m > (1 - EDGE) top
 SAME_TOTAL = 0.05                    # group totals within SAME_TOTAL top of each other are the same
@@ -37,12 +38,6 @@ def run_level(xs, fs, r, edge=EDGE):
     m = np.sum(f * t, axis=-1) / np.sum(f, axis=-1)
     top = 2 * r["x_max"]
     return np.select([m < edge * top, m > (1 - edge) * top], ["defection", "full"], "in between").astype(object)
-
-
-def run_specialisation(xs, fs, r):
-    # per run: share-weighted mean |L|, 0 (every group invests equally in both goods) to 1 (one good only)
-    f, _, lean, _ = groups(xs, fs, r)
-    return np.sum(f * np.abs(lean), axis=-1) / np.sum(f, axis=-1)
 
 
 def run_kind(xs, fs, r, same_total=SAME_TOTAL, lean_tol=LEAN_TOL):
@@ -82,7 +77,7 @@ def layers(r, edge=EDGE, same_total=SAME_TOTAL, lean_tol=LEAN_TOL):
     level = run_level(xs, fs, r, edge)
     kind, n = run_kind(xs, fs, r, same_total, lean_tol)
     return dict(level=point_level(level[0], level[1]),
-                specialisation=run_specialisation(xs, fs, r).mean(axis=0),
+                specialisation=individual(xs, fs, r).mean(axis=0),          # non-investing groups don't count as balanced
                 kind=point_kind(kind[0], kind[1]),
                 three=np.any(n >= 3, axis=0) & np.all(n >= 2, axis=0))
 
