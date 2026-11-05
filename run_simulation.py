@@ -12,8 +12,6 @@
 #         python run_simulation.py --model exp --sweep p_q --values beta=0.3,0.5    (other panel values)
 #         python run_simulation.py --model quadratic --sweep p_q_quadratic --n 20
 #         python run_simulation.py --model quadratic --sweep p_q_near_one --start 0.11,0.05   (one start)
-#         python run_simulation.py --model quadratic --benefit individual_sum --hessian silas \
-#                                  --split-mode forced_once --stop fixed_time --start-jitter
 #         in Colab: %run run_simulation.py --model quadratic --n 10
 
 import argparse
@@ -52,7 +50,11 @@ def load_or_simulate(model, sweep, s, n, tag):
                 merge_gap=s.merge_gap, max_steps=s.max_steps, settings={k: str(v) for k, v in asdict(s).items()})
     if os.path.exists(name):
         old = results.read_meta(name)
-        if {k: v for k, v in old.items() if k != "seconds"} != json.loads(json.dumps(meta)):
+        old.pop("seconds", None)
+        # options and settings that no longer exist (files made before they were removed) are left out
+        for key in ["model_options", "settings"]:
+            old[key] = {k: v for k, v in old[key].items() if k in meta[key]}
+        if old != json.loads(json.dumps(meta)):
             raise SystemExit(f"{name} exists but was made with different settings (e.g. edited sweep values): "
                              f"delete or rename it to re-run")
         print(f"{name} already exists: loading it instead of simulating (delete it to re-run)")
@@ -67,12 +69,10 @@ def load_or_simulate(model, sweep, s, n, tag):
     return arrays, name
 
 
-def print_summary(arrays, model, sweep, s, n):
+def print_summary(arrays, sweep, s):
     status, steps = arrays["status"], arrays["steps"]
     print(f"\nruns finished: {int((status == 1).sum())} of {status.size}; "
           f"stopped at max_steps = {s.max_steps}: {int((status == 2).sum())}")
-    if s.stop == "fixed_time":
-        print("  (stop fixed_time: a run hits max_steps if its time step shrank so far that its stages didn't finish)")
     print(f"steps used: median {int(np.median(steps))}, 90% {int(np.percentile(steps, 90))}, "
           f"99% {int(np.percentile(steps, 99))}, max {int(steps.max())}")
     print("runs that needed more slots: " + ", ".join(f"K={K}: {int((arrays['max_k'] >= K).sum())}" for K in s.k_levels)
@@ -85,20 +85,6 @@ def print_summary(arrays, model, sweep, s, n):
             if capped.any() or pushed.any():
                 print(f"  {a} = {va:g}, {b} = {vb:g}: {int(capped.sum())} runs not converged, "
                       f"{int(pushed.sum())} pushed off a saddle")
-    print(f"runs with a group at x_max and a selection gradient of exactly 0 there "
-          f"(a flat payoff, e.g. past a flattened peak): {zero_gradient_at_x_max(arrays, model, sweep, s, n)}")
-
-
-def zero_gradient_at_x_max(arrays, model, sweep, s, n):
-    # number of runs with a group at x_max in a good whose selection gradient in that good is exactly 0
-    xs, fs = arrays["xs"], arrays["fs"]
-    K = fs.shape[-1]
-    _, _, values = sweeps.layout(sweep, n, len(s.starts))
-    params = np.stack([values[name] for name in model.params], axis=1).astype(xs.dtype)
-    grads = engine.selection_gradients(model, params, xs.reshape(-1, K, 2), fs.reshape(-1, K))
-    alive = fs.reshape(-1, K, 1) > 0
-    corner = alive & (xs.reshape(-1, K, 2) >= s.x_max) & (grads == 0)
-    return int(corner.any(axis=(1, 2)).sum())
 
 
 if __name__ == "__main__":
@@ -109,20 +95,10 @@ if __name__ == "__main__":
     parser.add_argument("--values", action="append", default=[], metavar="NAME=V1,V2,...",
                         help="panel values to use instead of the sweep's, e.g. --values b2=0.6,0.8 (repeatable)")
     model_options = parser.add_argument_group("model options")
-    for name, (choices, help) in models.OPTIONS.items():
-        flag = "--" + name.replace("_", "-")
-        if choices == [False, True]:
-            model_options.add_argument(flag, action="store_true", default=None, help=help)
-        else:
-            model_options.add_argument(flag, choices=choices, help=help + f" (default {choices[0]})")
-    engine_options = parser.add_argument_group("engine options and settings (default: the model's / sweep's)")
-    engine_options.add_argument("--hessian", choices=["exact", "silas"])
-    engine_options.add_argument("--split-mode", choices=["test_repeat", "forced_once"])
-    engine_options.add_argument("--stop", choices=["converged", "fixed_time"])
-    engine_options.add_argument("--fixed-time", type=float, help="stage length for --stop fixed_time")
-    engine_options.add_argument("--start-jitter", action="store_true", default=None)
-    engine_options.add_argument("--jitter-seed", type=int)
-    for name in ["x_max", "x_min", "max_dt", "max_steps", "tol", "start_nudge"]:
+    for name, help in models.OPTIONS.items():
+        model_options.add_argument("--" + name.replace("_", "-"), action="store_true", help=help)
+    engine_options = parser.add_argument_group("settings (default: the model's / sweep's)")
+    for name in ["x_max", "x_min", "max_dt", "max_steps", "tol"]:
         engine_options.add_argument("--" + name.replace("_", "-"), type=int if name == "max_steps" else float)
     engine_options.add_argument("--x64", action="store_true", default=None, help="64-bit floats")
     engine_options.add_argument("--start", action="append", metavar="X1,X2",
@@ -132,7 +108,7 @@ if __name__ == "__main__":
         args["start"] = tuple(tuple(float(v) for v in item.split(",")) for item in args["start"])
 
     # 1. the model, the sweep and the settings
-    model = models.make_model(args["model"], **{k: args[k] for k in models.OPTIONS if args[k] is not None})
+    model = models.make_model(args["model"], **{k: True for k in models.OPTIONS if args[k]})
     sweep = sweeps.SWEEPS[args["sweep"] or model.default_sweep]
     values = {name: [float(v) for v in vs.split(",")] for name, vs in (item.split("=") for item in args["values"])}
     sweep = sweeps.with_values(sweep, values)
@@ -148,12 +124,8 @@ if __name__ == "__main__":
     # 2. checks
     print("running on:", jax.devices())
     print("payoff checks:"); models.check_payoff(model)
-    if s.hessian == "silas":
-        if model.chain_hessian is None:
-            raise SystemExit(f"--hessian silas needs a chain-rule Hessian, which {model.tag} doesn't have")
-        print("Hessian checks:"); models.check_chain_hessian(model)
 
     # 3. simulate (or load), and summarise
     arrays, name = load_or_simulate(model, sweep, s, args["n"], tag)
-    print_summary(arrays, model, sweep, s, args["n"])
+    print_summary(arrays, sweep, s)
     print(f"\nnext: python run_analysis.py {name}")

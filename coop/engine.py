@@ -8,16 +8,6 @@
 #   - a run whose traits and shares have settled is finished
 #   - a run that is cycling gets a smaller time step, one that isn't a larger one (up to max_dt)
 # Runs start with 2 group slots and move up to 4, then 8, only if a split needs room.
-#
-# Engine options (Settings below; defaults first) for comparing with a reference implementation:
-#   hessian       exact: jax.hessian  |  silas: chain rule with a different mixed derivative of M
-#                 (quadratic model only)
-#   split_mode    test_repeat: split stopped groups whose payoff curves upwards, repeatedly
-#                 forced_once: after the first stage split every group once along the top
-#                 eigenvector of the full Hessian, run one more stage, then stop
-#   stop          converged: a stage ends when the run has settled
-#                 fixed_time: a stage ends after exactly fixed_time time units
-#   start_jitter  False | True: one random offset per (start, panel, good), normal(0, jitter_sd)
 
 import time
 from collections import deque
@@ -36,7 +26,6 @@ class Settings:
     x_min: float = 1e-6
     lo: float = None                 # starts: the four corners of (lo, hi) in both goods;
     hi: float = None                 # None: 0.5% and 99.5% of x_max
-    start_nudge: float = 0.0         # moved off the diagonal: (lo, lo + nudge) and (hi - nudge, hi)
     start: tuple = ()                # given starts ((x1, x2), ...): replace the four corners
     # time stepping and stopping
     time_step: float = 0.01          # starting time step (halved while a run is cycling)
@@ -56,14 +45,6 @@ class Settings:
     saddle_tol: float = 1e-4         # Jacobian eigenvalues above this make a saddle (0 = neutral, as when p = q)
     cascade_dist: float = 0.05       # a group splits again only after moving this far from its last split
     cycle_ratio: float = 0.1         # cycling: net movement < this x (chunk * dt * gradient)
-    # engine options (see the top of this file)
-    hessian: str = "exact"
-    split_mode: str = "test_repeat"
-    stop: str = "converged"
-    fixed_time: float = 100.0
-    start_jitter: bool = False
-    jitter_seed: int = 0
-    jitter_sd: float = 0.01
     x64: bool = False                # 32-bit gave identical labels and is much faster on GPU
 
     @property
@@ -72,11 +53,7 @@ class Settings:
             return [tuple(x) for x in self.start]
         lo = 0.005 * self.x_max if self.lo is None else self.lo
         hi = 0.995 * self.x_max if self.hi is None else self.hi
-        # the balanced corners are nudged off the diagonal: a group investing exactly equally in both
-        # goods can never begin to lean towards one (start_jitter doesn't guarantee this, as it can
-        # clip a low start back onto the diagonal); the lopsided corners are unchanged
-        n = self.start_nudge
-        return [(lo, lo + n), (lo, hi), (hi, lo), (hi - n, hi)]
+        return [(lo, lo), (lo, hi), (hi, lo), (hi, hi)]
 
     @property
     def dtype(self):
@@ -97,15 +74,12 @@ def largest_eigen(A):
 
 # ---------- one population: `chunk` steps, and the check after them ----------
 # xs: (K slots, 2 goods), fs: (K,); a slot with share 0 is unused. params: the run's parameter values
-# in model.params order. Built per (model, settings): the settings are fixed while a function is
-# traced, so the Python ifs on them choose which code is compiled.
+# in model.params order.
 
 def make_engine(model, s):
-    fixed = s.stop == "fixed_time"
-    prm = lambda params: dict(zip(model.params, params))
-    payoff_of = lambda params: lambda y, xs, fs: jnp.sum(fs * model.payoff(y, xs, prm(params)))
+    payoff_of = lambda params: lambda y, xs, fs: jnp.sum(fs * model.payoff(y, xs, dict(zip(model.params, params))))
 
-    def run_chunk(params, xs, fs, dt, time_left):
+    def run_chunk(params, xs, fs, dt):
         payoff = payoff_of(params)
         group_payoffs = jax.vmap(payoff, in_axes=(0, None, None))
         group_grads = jax.vmap(jax.grad(payoff), in_axes=(0, None, None))
@@ -113,24 +87,21 @@ def make_engine(model, s):
         slots = jnp.arange(K)
 
         def step(state, _):
-            xs, fs, elapsed = state
-            old = xs, fs
-            # fixed_time: the last step is shortened to end exactly at time_left, later ones do nothing
-            step_dt = jnp.clip(time_left - elapsed, 0.0, dt) if fixed else dt
+            xs, fs = state
             alive = fs > 0
 
             # 1. compute group grads
             grads = group_grads(xs, xs, fs)
 
             # 2. update investments (used slots only)
-            new_xs = jnp.where(alive[:, None], jnp.clip(xs + step_dt * grads, s.x_min, s.x_max), xs)
+            new_xs = jnp.where(alive[:, None], jnp.clip(xs + dt * grads, s.x_min, s.x_max), xs)
 
             # 3. calculate per group payoffs and average payoff
             payoffs = group_payoffs(xs, xs, fs)
             avg_payoff = jnp.sum(fs * payoffs)
 
             # 4. update population shares
-            new_fs = fs + step_dt * fs * (payoffs - avg_payoff)
+            new_fs = fs + dt * fs * (payoffs - avg_payoff)
             xs, fs = new_xs, new_fs / jnp.sum(new_fs)
 
             # 5. min check: remove groups below min_share
@@ -146,13 +117,10 @@ def make_engine(model, s):
             merged_x = (fs[i] * xs[i] + fs[j] * xs[j]) / (fs[i] + fs[j])
             xs = jnp.where(merge, xs.at[i].set(merged_x), xs)
             fs = jnp.where(merge, fs.at[i].add(fs[j]).at[j].set(0.0), fs)
+            return (xs, fs), None
 
-            if fixed:
-                xs, fs = jnp.where(step_dt > 0, xs, old[0]), jnp.where(step_dt > 0, fs, old[1])
-            return (xs, fs, elapsed + step_dt), None
-
-        (xs, fs, elapsed), _ = jax.lax.scan(step, (xs, fs, jnp.zeros_like(dt)), None, length=s.chunk)
-        return xs, fs, elapsed
+        (xs, fs), _ = jax.lax.scan(step, (xs, fs), None, length=s.chunk)
+        return xs, fs
 
     def check(params, xs, fs):
         # Per group, with goods at a wall left out:
@@ -160,7 +128,6 @@ def make_engine(model, s):
         #   lam, v: largest curvature of a mutant's payoff and its direction (branching if lam > 0)
         #   mu, u:  largest eigenvalue of the selection-gradient Jacobian, i.e. as the whole group moves,
         #           and its direction (a saddle if mu > 0)
-        #   lam_full, v_full: largest curvature of the full Hessian, walls included (for forced_once)
         # Per run:
         #   gap:    largest difference between a group's payoff and the average (shares still changing)
         payoff = payoff_of(params)
@@ -175,29 +142,17 @@ def make_engine(model, s):
         payoffs = jax.vmap(payoff, in_axes=(0, None, None))(xs, xs, fs)
         gap = jnp.max(jnp.where(alive, jnp.abs(payoffs - jnp.sum(fs * payoffs)), 0.0))
 
-        if s.hessian == "exact":
-            H = jax.vmap(jax.hessian(payoff), in_axes=(0, None, None))(xs, xs, fs)
-        else:
-            H = jax.vmap(model.chain_hessian, in_axes=(0, None, None, None))(xs, xs, fs, prm(params))
+        H = jax.vmap(jax.hessian(payoff), in_axes=(0, None, None))(xs, xs, fs)
         lam, v = jax.vmap(largest_eigen)(jnp.where(free2, H, 0.0))
-        lam_full, v_full = jax.vmap(largest_eigen)(H)
 
         def jacobian(i):        # selection gradient of group i as its trait moves (other groups fixed)
             return jax.jacfwd(lambda x: jax.grad(payoff)(x, xs.at[i].set(x), fs))(xs[i])
         J = jax.vmap(jacobian)(jnp.arange(xs.shape[0]))
         J = jnp.where(free2, J, 0.0) - jnp.eye(2) * ~free[:, None, :]           # goods at a wall: stable
         mu, u = jax.vmap(largest_eigen)(J)
-        return g, gap, lam, v, mu, u, lam_full, v_full
+        return g, gap, lam, v, mu, u
 
     return jax.jit(jax.vmap(run_chunk)), jax.jit(jax.vmap(check))     # vmap: many populations at once
-
-
-def selection_gradients(model, params, xs, fs):
-    # every group's selection gradient, for many runs at once: params (N, parameters), xs (N, K, 2), fs (N, K)
-    def one(params, xs, fs):
-        payoff = lambda y, xs, fs: jnp.sum(fs * model.payoff(y, xs, dict(zip(model.params, params))))
-        return jax.vmap(jax.grad(payoff), in_axes=(0, None, None))(xs, xs, fs)
-    return np.asarray(jax.jit(jax.vmap(one))(params, xs, fs))
 
 
 # ---------- running every population until it has finished ----------
@@ -206,49 +161,41 @@ class Runs:
     # state of every run; slots up to the largest K, unused ones with share 0
     def __init__(self, model, sweep, s, n):
         starts = s.starts
-        self.shape, (I, Ia, Ib), values = sweeps.layout(sweep, n, len(starts))   # (start, panel a, panel b, row, column)
+        self.shape, (I, _, _), values = sweeps.layout(sweep, n, len(starts))   # (start, panel a, panel b, row, column)
         N, k = I.size, s.k_levels[-1]
         self.params = np.stack([values[name] for name in model.params], axis=1).astype(s.dtype)
-
-        x0 = np.array(starts)[I]
-        if s.start_jitter:      # one offset per (start, panel, good), shared by the whole panel
-            offsets = np.random.default_rng(s.jitter_seed).normal(0, s.jitter_sd, self.shape[:3] + (2,))
-            x0 = np.clip(x0 + offsets[I, Ia, Ib], s.x_min, s.x_max)
-        self.xs = np.repeat(x0[:, None, :], k, axis=1).astype(s.dtype)
+        self.xs = np.repeat(np.array(starts)[I][:, None, :], k, axis=1).astype(s.dtype)
         self.fs = np.zeros((N, k), s.dtype)
         self.fs[:, 0] = 1.0
         self.origin = np.full((N, k, 2), np.nan)          # where each group last split
         self.dt = np.full(N, s.time_step, s.dtype)
         self.steps = np.zeros(N, int)
+        self.time = np.zeros(N)                           # time so far
         self.status = np.zeros(N, int)                    # 0 running, 1 finished, 2 hit max_steps
         self.max_k = np.full(N, s.k_levels[0])            # most slots the run needed
         self.overflow = np.zeros(N, bool)                 # wanted more than k_levels[-1] slots
         self.pushes = np.zeros(N, int)                    # times a group was pushed off a saddle
-        self.stage = np.zeros(N, int)                     # splits made so far (forced_once and fixed_time)
-        self.stage_time = np.zeros(N)                     # time since the stage started
 
     def results(self):
         s = self.shape
         return dict(xs=self.xs.reshape(*s, -1, 2), fs=self.fs.reshape(*s, -1), steps=self.steps.reshape(s),
                     status=self.status.reshape(s), dt=self.dt.reshape(s), max_k=self.max_k.reshape(s),
-                    overflow=self.overflow.reshape(s), pushes=self.pushes.reshape(s), stage=self.stage.reshape(s))
+                    overflow=self.overflow.reshape(s), pushes=self.pushes.reshape(s))
 
 
 def advance(engine, s, runs, ids, K, size):
     # one chunk for the runs in ids (all with K slots), then the check and the decisions;
     # returns the runs that carry on at this K, and those that moved up to more slots
     run_chunk_all, check_all = engine
-    fixed, forced = s.stop == "fixed_time", s.split_mode == "forced_once"
     ids = np.array(ids)
     padded = np.concatenate([ids, np.repeat(ids[:1], size - len(ids))])     # fixed batch size
     params = runs.params[padded]
     x_start = runs.xs[ids, :K]
-    time_left = (s.fixed_time - runs.stage_time[padded]).astype(s.dtype)
-    xs, fs, elapsed = run_chunk_all(params, runs.xs[padded, :K], runs.fs[padded, :K], runs.dt[padded], time_left)
-    g, gap, lam, v, mu, u, lam_full, v_full = (np.asarray(a)[:len(ids)] for a in check_all(params, xs, fs))
+    xs, fs = run_chunk_all(params, runs.xs[padded, :K], runs.fs[padded, :K], runs.dt[padded])
+    g, gap, lam, v, mu, u = (np.asarray(a)[:len(ids)] for a in check_all(params, xs, fs))
     xs, fs = np.asarray(xs)[:len(ids)], np.asarray(fs)[:len(ids)]
     runs.steps[ids] += s.chunk
-    runs.stage_time[ids] += np.asarray(elapsed)[:len(ids)]
+    runs.time[ids] += s.chunk * runs.dt[ids]
 
     alive = fs > 0
     stopped = alive & (g < s.tol)
@@ -259,30 +206,13 @@ def advance(engine, s, runs, ids, K, size):
     runs.xs[ids, :K], runs.fs[ids, :K] = xs, fs
     runs.pushes[ids] += saddle.sum(axis=1)
 
-    # a group at an attracting point with upward curvature wants to split, unless it split nearby
+    # a stopped group at an attracting point with upward curvature splits, unless it split nearby;
+    # the run is finished once nothing moves, no shares change and nothing splits or is pushed
     moved_away = ~(np.linalg.norm(xs - runs.origin[ids, :K], axis=-1) < s.cascade_dist)   # never split: True
-    upward = ~saddle & (lam > s.lam_min) & moved_away
+    split_wanted = stopped & ~saddle & (lam > s.lam_min) & moved_away
     g_max = np.where(alive, g, 0.0).max(axis=1)
-    settled = (g_max < s.tol) & (gap < s.tol)        # no movement, no share changes
-
-    # when does a stage end, which groups split, and when is the run finished
-    if fixed:
-        stage_end = runs.stage_time[ids] >= s.fixed_time * (1 - 1e-6)
-    else:
-        stage_end = settled & ~saddle.any(axis=1)
-    if forced:          # stage 0 ends: every group splits along the full Hessian; stage 1 ends: done
-        split_wanted = (stage_end & (runs.stage[ids] == 0))[:, None] & alive
-        directions = v_full
-        finished = stage_end & (runs.stage[ids] >= 1)
-    elif fixed:         # each stage end: test, split the groups that want to; done if none do
-        split_wanted = stage_end[:, None] & alive & upward
-        directions = v
-        finished = stage_end & ~split_wanted.any(axis=1)
-    else:               # default: split stopped groups whenever they want to; done once settled
-        split_wanted = stopped & upward
-        directions = v
-        finished = settled & ~(split_wanted.any(axis=1) | saddle.any(axis=1))
     busy = split_wanted.any(axis=1) | saddle.any(axis=1)
+    finished = (g_max < s.tol) & (gap < s.tol) & ~busy
 
     # cycling (large gradient, hardly any net movement): halve dt; otherwise let it grow, up to max_dt
     net = np.where(alive, np.linalg.norm(xs - x_start, axis=-1), 0.0).max(axis=1)
@@ -291,10 +221,7 @@ def advance(engine, s, runs, ids, K, size):
 
     moved_up = np.zeros(len(ids), bool)
     for r in np.flatnonzero(split_wanted.any(axis=1)):
-        moved_up[r] = split(s, runs, ids[r], np.flatnonzero(split_wanted[r]), directions[r], K) != K
-        if fixed or forced:                               # a new stage starts
-            runs.stage[ids[r]] += 1
-            runs.stage_time[ids[r]] = 0.0
+        moved_up[r] = split(s, runs, ids[r], np.flatnonzero(split_wanted[r]), v[r], K) != K
 
     capped = runs.steps[ids] >= s.max_steps
     done = finished | capped

@@ -108,7 +108,7 @@ def simulate(conditions, end_time):
         if not frames:          # first call: the runs were just created; set the starts
             for k, start in enumerate(starts):
                 runs.xs[start_slot == k] = start
-        frames.append((runs.stage_time.copy(), runs.xs.copy(), runs.fs.copy()))
+        frames.append((runs.time.copy(), runs.xs.copy(), runs.fs.copy()))
 
     engine.simulate(model, sweep, s, 1, record=record)
     times, xs, fs = (np.stack(a) for a in zip(*frames))                   # (frame, run, ...)

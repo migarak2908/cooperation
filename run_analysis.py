@@ -5,24 +5,20 @@
 # Usage:  python run_analysis.py                                  (newest results file, default scheme)
 #         python run_analysis.py RESULTS.npz --scheme cc_dc_dd mean_investment
 #         python run_analysis.py RESULTS.npz --invested absolute   (override the "invested" rule)
-#         python run_analysis.py RESULTS.npz --cut 0.7             (each group's lean, at grid column 0.7)
-#         python run_analysis.py RESULTS.npz --compare OTHER.npz   (side by side, and where labels differ)
 #         python run_analysis.py RESULTS.npz --scheme mean_investment --relative-to p=1,q=1   (minus that panel)
 #         python run_analysis.py RESULTS.npz --scheme mean_investment --relative-to-point p=1,q=1
 #                                                                  (minus that grid point, in each panel)
-#         python run_analysis.py RESULTS.npz --summary             (fraction of each panel meeting SUMMARIES)
 #         python run_analysis.py RESULTS.npz --starts 0 3          (only the runs from starts 0 and 3)
 #         python run_analysis.py RESULTS.npz --scheme individual --hatch division_of_labour_index:0.5
 #                                                                  (hatch where that scheme is above 0.5)
 #         in Colab: %run run_analysis.py RESULTS.npz
 
 import argparse
-from collections import Counter
 import warnings
 import numpy as np
 
 from coop import plots, references, results, schemes
-from coop.schemes import SCHEMES, SUMMARIES, RARE_FRAC
+from coop.schemes import SCHEMES, RARE_FRAC
 
 
 def default_schemes(r):
@@ -174,52 +170,6 @@ def analyse(r, name, relative_to=None, point=None, hatch=None):
                           f"{base}_unfiltered.png")
 
 
-def summarise(r):
-    # for each SUMMARIES entry, the fraction of each panel's grid points meeting its condition;
-    # printed as a table (rows panels, columns entries) and saved as one figure
-    # entries relative to a panel this sweep doesn't have (e.g. p = q = 1 on a (p, q) grid) are skipped
-    entries = [e for e in SUMMARIES if not e[2] or set(e[2]) <= set(r["panel_names"])]
-    for title, _, relative_to, *_ in [e for e in SUMMARIES if e not in entries]:
-        print(f"summary: {title!r} skipped: relative to {describe(relative_to)}, "
-              f"but the panel parameters are {', '.join(r['panel_names'])}")
-    fractions = []
-    for title, name, relative_to, comparison, threshold in entries:
-        values = average_over_starts(SCHEMES[name]["outcome"](r["xs"], r["fs"], r))   # (panel a, panel b, row, column)
-        if relative_to:
-            values = relative(values, r, {k: float(v) for k, v in relative_to.items()})
-        with np.errstate(invalid="ignore"):                                     # NaN: not met
-            met = {"abs>": np.abs(values) > threshold, ">": values > threshold, "<": values < threshold}[comparison]
-        fractions.append(met.mean(axis=(-2, -1)))
-    width = max(len(t) for t, *_ in entries)
-    print("\nsummary: fraction of each panel's grid points meeting each condition")
-    print(" " * 22 + "".join(f"{t:>{width + 2}s}" for t, *_ in entries))
-    for (i, j), panel in panel_names(r).items():
-        print(f"{panel:22s}" + "".join(f"{f[i, j]:>{width + 2}.2f}" for f in fractions))
-    plots.plot_summary(fractions, entries, r, f"summary_{r['tag']}.png")
-
-
-def compare_results(r, other, name):
-    # two results files on the same grid (e.g. with and without an engine option): unfiltered labels
-    # side by side, and where they differ: in total, per panel, and the 5 most common changes
-    same_grid = (r["panel_names"] == other["panel_names"] and r["panel_values"] == other["panel_values"]
-                 and r["grid_names"] == other["grid_names"]
-                 and all(np.array_equal(a, b) for a, b in zip(r["grid_axes"], other["grid_axes"]))
-                 and r["xs"].shape[0] == other["xs"].shape[0])
-    if not same_grid:
-        raise SystemExit("--compare needs two results files with the same sweep, grid size and starts")
-    scheme = SCHEMES[name]
-    if scheme["kind"] != "categories":
-        raise SystemExit(f"--compare needs a categories scheme, not {name}")
-    left, right = (schemes.grid_labels(scheme["outcome"](x["xs"], x["fs"], x)) for x in (r, other))
-    plots.plot_side_by_side(left, right, r, scheme, [r["tag"], other["tag"]],
-                            f"compare_{name}_{r['tag']}_vs_{other['tag']}.png")
-    differ = left != right
-    print(f"\ngrid points whose unfiltered {name} label differs (of {left.size}): {int(differ.sum())}")
-    print("  per panel: " + ", ".join(f"{panel}: {int(differ[ij].sum())}" for ij, panel in panel_names(r).items()))
-    for (a, b), c in Counter(zip(left[differ], right[differ])).most_common(5):
-        print(f"  {a} -> {b} ({c})")
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("results", nargs="?", help=f"results file (default: newest {results.PREFIX}*.npz)")
@@ -227,8 +177,6 @@ if __name__ == "__main__":
                         help="one or more labelling schemes (default: cc_dc_dd_division on a (p, q) grid, else cc_dc_dd)")
     parser.add_argument("--invested", choices=["half_cap", "absolute"],
                         help="rule for an invested good (default: the model's own)")
-    parser.add_argument("--cut", type=float, help="plot each group's lean along the grid rows, at the grid column nearest this")
-    parser.add_argument("--compare", metavar="OTHER", help="another results file on the same grid to compare with")
     parser.add_argument("--relative-to", metavar="NAME=V[,NAME=V]",
                         help="scale schemes: plot each panel minus the panel with these values, e.g. p=1,q=1")
     parser.add_argument("--relative-to-point", metavar="NAME=V,NAME=V",
@@ -237,7 +185,6 @@ if __name__ == "__main__":
     parser.add_argument("--hatch", metavar="SCHEME:THRESHOLD",
                         help="scale schemes: hatch the grid points where SCHEME (averaged over starts) is above "
                              "THRESHOLD, e.g. division_of_labour_index:0.5")
-    parser.add_argument("--summary", action="store_true", help="fraction of each panel meeting each SUMMARIES condition")
     parser.add_argument("--starts", nargs="+", type=int, metavar="I",
                         help="analyse only the runs from these starts (indices into the results' starts), e.g. 0 3")
     args = parser.parse_args()
@@ -256,18 +203,6 @@ if __name__ == "__main__":
         if hatch_name not in SCHEMES:
             raise SystemExit(f"--hatch: no scheme {hatch_name!r} (schemes: {', '.join(SCHEMES)})")
         hatch = (hatch_name, float(threshold))
-    names = args.scheme or ([] if args.cut is not None or args.summary else default_schemes(r))
-    if args.cut is not None:
-        plots.plot_cut(r, args.cut)
-    if args.summary:
-        summarise(r)
-    if args.compare:
-        other = results.load(args.compare)
-        other["invested_rule"] = args.invested
-        if args.starts:
-            other = keep_starts(other, args.starts)
-        compare_results(r, other, (names or default_schemes(r))[0])
-    else:
-        for name in names:
-            print(f"\n---------- {name} ----------")
-            analyse(r, name, relative_to, point, hatch)
+    for name in args.scheme or default_schemes(r):
+        print(f"\n---------- {name} ----------")
+        analyse(r, name, relative_to, point, hatch)

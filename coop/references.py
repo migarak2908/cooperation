@@ -3,13 +3,12 @@
 # and on which parameters are on the grid; each function says what it covers and returns nothing
 # (no lines, no comparison) for other combinations. Needs numpy only (no jax).
 #
-# To add references for a new model or sweep: add a branch to lines (and cut_lines, compare) below.
+# To add references for a new model or sweep: add a branch to lines (and compare) below.
 
 import numpy as np
 
 from coop.results import panel_index, panel_value
 
-SHADE_VALID_BAND = False             # quadratic: grey out grid cells outside the band between the two lines
 FLAT_REGION = (0.5, 1.0)             # quadratic with flat benefit: branching is permissible for b2' in this range
 
 
@@ -80,24 +79,6 @@ def band_lines(b, x_max):
     #   lower: x* inside [0, x_max] (valid above it)
     # with x_max = 0.5 both are b2' = b1'/2
     return b / (4 * x_max), (b - 1 + 2 * x_max) / (4 * x_max)
-
-
-def shade(r):
-    # with SHADE_VALID_BAND, the quadratic grid cells outside the band between the two lines (or None)
-    if not (SHADE_VALID_BAND and r["model"] == "quadratic" and grid(r) == ("b2", "b1")
-            and not r["model_options"].get("flat_benefit")):
-        return None
-    y_axis, x_axis = r["grid_axes"]
-    B1, B2 = np.meshgrid(x_axis, y_axis)
-    upper, lower = band_lines(B1, r["x_max"])
-    return ~((B2 >= lower) & (B2 <= upper))
-
-
-def cut_lines(r, x_value):
-    # vertical lines for a cut at grid column value x_value, along the grid rows: (position, style, label)
-    if grid(r) == ("q", "p"):
-        return [(x_value, "--", "q = p"), ((x_value + 1) / 2, ":", "q = (p + 1)/2")]
-    return []
 
 
 # ---------- analytic predictions, compared with the simulated grid labels ----------

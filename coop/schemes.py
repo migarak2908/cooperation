@@ -29,6 +29,13 @@ def counted_groups(xs, fs, r):
     return xs, fs, counted
 
 
+def state(groups, shares, fill=0.0):
+    # a hand-made final state for the checks: 4 slots, the given groups and shares, the rest unused at fill
+    xs, fs = np.full((4, 2), fill), np.zeros(4)
+    xs[:len(groups)], fs[:len(shares)] = groups, shares
+    return xs, fs
+
+
 # ---------- scheme: CC / DC / DD ----------
 # A good is "invested" above invested_threshold(r):
 #   half_cap: above x_max / 2 (the quadratic model's default: half the cap)
@@ -101,10 +108,7 @@ def check_cc_dc_dd(r):
     half = invested_threshold(r)
     hi, lo = 1.2 * half, 0.8 * half                     # 0.6 x_max and 0.4 x_max for the half_cap rule
     rule = "x_max / 2" if invested_rule(r) == "half_cap" else f"{half:g}"
-    def outcome(groups, shares, division=False):
-        xs = np.full((4, 2), t); fs = np.zeros(4)
-        xs[:len(groups)], fs[:len(shares)] = groups, shares
-        return cc_dc_dd(xs, fs, r, division)
+    outcome = lambda groups, shares, division=False: cc_dc_dd(*state(groups, shares, t), r, division)
     cases = [
         (f"one group at ({m:g}, {m:g})",                     outcome([(m, m)], [1.0]),                          "CC"),
         (f"groups at ({m:g}, {m:g}) and (1e-6, 1e-6)",       outcome([(m, m), (t, t)], [0.5, 0.5]),             "CC and DD"),
@@ -188,10 +192,8 @@ def first(value):
 
 
 def check_lopsidedness(r):
-    def values(groups, shares):
-        xs = np.zeros((4, 2)); fs = np.zeros(4)
-        xs[:len(groups)], fs[:len(shares)] = groups, shares
-        return first(individual(xs, fs, r)), first(population(xs, fs, r))
+    values = lambda groups, shares: (first(individual(*state(groups, shares), r)),
+                                     first(population(*state(groups, shares), r)))
     cases = [
         ("one group at (1, 0)",                          values([(1, 0)], [1.0]),                  (1.0, 1.0)),
         ("groups at (1, 0) and (0, 1), shares 0.5 each", values([(1, 0), (0, 1)], [0.5, 0.5]),     (1.0, 0.0)),
@@ -205,10 +207,7 @@ def check_lopsidedness(r):
 
 
 def check_division_of_labour_index(r):
-    def score(groups, shares):
-        xs = np.zeros((4, 2)); fs = np.zeros(4)
-        xs[:len(groups)], fs[:len(shares)] = groups, shares
-        return first(division_of_labour_index(xs, fs, r))
+    score = lambda groups, shares: first(division_of_labour_index(*state(groups, shares), r))
     same = lambda got, expected: abs(got - expected) < 1e-9 or (np.isnan(got) and np.isnan(expected))
     cases = [
         ("one group at (1, 1)",                              score([(1, 1)], [1.0]),                                  0.0),
@@ -223,10 +222,7 @@ def check_division_of_labour_index(r):
 
 
 def check_specialisation(r):
-    def score(groups, shares):
-        xs = np.zeros((4, 2)); fs = np.zeros(4)
-        xs[:len(groups)], fs[:len(shares)] = groups, shares
-        return first(specialisation(xs, fs, r))
+    score = lambda groups, shares: first(specialisation(*state(groups, shares), r))
     cases = [
         ("one group at (1, 0): all in the same good",     score([(1, 0)], [1.0]),                  1.0),
         ("one group at (1, 1): balanced",                 score([(1, 1)], [1.0]),                  0.0),
@@ -235,35 +231,6 @@ def check_specialisation(r):
     for name, got, expected in cases:
         print(f"  {'ok' if abs(got - expected) < 1e-9 else 'FAILED':6s} {name:50s} -> {got:g} (expected {expected:g})")
         assert abs(got - expected) < 1e-9
-
-
-# ---------- scheme: spread of total investment between groups (a sliding scale) ----------
-# sqrt(sum f_i (t_i - sum f_j t_j)^2) with t_i = x1_i + x2_i (counted groups only): 0 when every group
-# invests the same total, large when the totals branch (e.g. cooperators and defectors)
-
-def spread(xs, fs, r):
-    xs, fs, counted = counted_groups(xs, fs, r)
-    f = np.where(counted, fs, 0.0)
-    t = xs[..., 0] + xs[..., 1]
-    mean = np.sum(f * t, axis=-1, keepdims=True)
-    return np.sqrt(np.sum(f * (t - mean) ** 2, axis=-1))
-
-
-def total_spread(xs, fs, r):
-    # as a fraction of twice references.investment_scale (x_max, or x*): 0.5 for an even split
-    # between investing nothing and the scale in both goods
-    return spread(xs, fs, r) / (2 * references.investment_scale(r)[0])
-
-
-def check_total_spread(r):
-    # checked on the unscaled spread, so it holds for any model's scale
-    m = r["x_max"]
-    xs = np.zeros((4, 2)); fs = np.zeros(4)
-    xs[0], fs[:2] = (m, m), (0.5, 0.5)
-    got = float(spread(xs, fs, r)) / (2 * m)
-    name = f"groups at ({m:g}, {m:g}) and (0, 0), shares 0.5 each"
-    print(f"  {'ok' if abs(got - 0.5) < 1e-9 else 'FAILED':6s} {name:50s} -> spread / (2 x_max) {got:g} (expected 0.5)")
-    assert abs(got - 0.5) < 1e-9
 
 
 # ---------- scheme: not converged (a sliding scale) ----------
@@ -304,10 +271,7 @@ def dhk_colours(present):
 
 def check_dhk_type(r):
     m = r["x_max"]
-    def outcome(groups, shares):
-        xs = np.zeros((4, 2)); fs = np.zeros(4)
-        xs[:len(groups)], fs[:len(shares)] = groups, shares
-        return str(dhk_type(xs, fs, r))
+    outcome = lambda groups, shares: str(dhk_type(*state(groups, shares), r))
     cases = [
         ("one group at (0, 0)",                           outcome([(0, 0)], [1.0]),                         "defection"),
         (f"one group at ({m:g}, {m:g})",                  outcome([(m, m)], [1.0]),                         "full cooperation"),
@@ -325,11 +289,10 @@ def check_dhk_type(r):
 
 
 # ---------- schemes ----------
-# kind: "categories" or "scale". Optional: check (run first), and for categories colours (a fixed
-# legend) and compare (run on the unfiltered grid labels: the model's analytic prediction); for a
-# scale, label, unit (may use {scale}; shown in brackets after the label), range ((vmin, vmax), or a
-# function of r giving it) and colours (a
-# map's colours from vmin to vmax; default plots.SEQUENTIAL), ends (words for the colour bar's two
+# kind: "categories" or "scale". Optional: check (run first); for categories, colours (a fixed legend)
+# and compare (run on the unfiltered grid labels: the model's analytic prediction); for a scale, label,
+# unit (may use {scale}; shown in brackets after the label), range ((vmin, vmax), or a function of r),
+# colours (the map from vmin to vmax; default plots.SEQUENTIAL), ends (words for the colour bar's two
 # ends) and short (a name for legends, e.g. --hatch)
 
 SCHEMES = {
@@ -345,8 +308,6 @@ SCHEMES = {
                               label="individual specialisation", ends=("balanced", "specialised")),
     "population":        dict(kind="scale", outcome=population, check=check_lopsidedness, range=(0, 1),
                               label="population bias", ends=("balanced", "specialised")),
-    "total_spread":      dict(kind="scale", outcome=total_spread, check=check_total_spread, range=(0, 0.5),
-                              label="spread of total investment between groups / (2 {scale})"),
     "specialisation":    dict(kind="scale", outcome=specialisation, check=check_specialisation, range=(-1, 1),
                               colours=["#1D9E75", "#FFFFFF", "#378ADD"],
                               label="specialisation: +1 = all in the same good, 0 = balanced, -1 = division of labour"),
@@ -355,21 +316,6 @@ SCHEMES = {
     "dhk_type":          dict(kind="categories", outcome=dhk_type, colours=dhk_colours,
                               check=check_dhk_type, compare=references.compare_dhk),
 }
-
-
-# ---------- summaries ----------
-# one cell per panel: the fraction of the panel's grid points meeting a condition on a scale scheme
-# (averaged over starts first, then minus the panel with relative_to's values, if given);
-# comparison "abs>" (|value| > threshold), ">" or "<"
-
-SUMMARIES = [
-    # title                 scheme                      relative_to         comparison  threshold
-    ("totals changed",      "mean_investment",          {"p": 1, "q": 1},   "abs>",     0.05),
-    ("branched totals",     "total_spread",             None,               ">",        0.1),
-    ("single specialists",  "population",               None,               ">",        0.5),
-    ("division of labour",  "division_of_labour_index", None,               ">",        0.5),
-    ("balanced",            "individual",               None,               "<",        0.1),
-]
 
 
 # ---------- grid labels ----------

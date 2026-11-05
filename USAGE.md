@@ -36,16 +36,14 @@ Figures are saved as `.png` files in the folder, not shown in the notebook.
 | Other panel values, without editing code | add e.g. `--values beta=0.3,0.5` or `--values b2=0.7,0.95` | same | the changed values are added to the file name |
 | How investment is spread (a colour scale) | any | `--scheme mean_investment` | `mean_investment_<tag>.png` |
 | How cleanly groups divide the goods | any (made for `p_q`) | `--scheme division_of_labour_index` | `division_of_labour_index_<tag>.png` |
-| Each group's lean along one column of the grid | any (made for `p_q`) | `--cut 0.7` | `cut_p0.7_<tag>.png`: one row per start |
-| How total investment and the split between goods change as p and q move away from 1 | `--model quadratic --values p=0.9,1,1.1 --values q=0.9,1,1.1 --start-nudge 0.001` | `--scheme mean_investment total_spread --relative-to p=1,q=1`, then `--summary` | `<scheme>_<tag>_rel-p1-q1.png`, `summary_<tag>.png` and a printed table |
-| Compare with the reference implementation (ablation) | the three runs under [Comparing runs](#comparing-runs) | `--compare` | `compare_<scheme>_<tagA>_vs_<tagB>.png` and the differences printed |
+| How total investment and the split between goods change as p and q move away from 1 | `--model quadratic --values p=0.9,1,1.1 --values q=0.9,1,1.1` | `--scheme mean_investment individual --relative-to p=1,q=1` | `<scheme>_<tag>_rel-p1-q1.png` |
 
 Add `--n 10` (or `--n 20` for `p_q`) to any simulation for a quick test; the default is a 100 × 100 grid.
 
 ## run_simulation.py
 
 ```
-python run_simulation.py --model MODEL [--sweep SWEEP] [--n N] [model options] [engine options]
+python run_simulation.py --model MODEL [--sweep SWEEP] [--n N] [model options] [settings]
 ```
 
 ### Models and sweeps
@@ -72,10 +70,7 @@ name (`..._p_q_quadratic_b1-1.2-1.6_b2-0.7_n100_...`), so runs with different va
 each other. Grid ranges are changed in `coop/sweeps.py`.
 
 Each run starts from one of four corners, `(lo, lo)`, `(lo, hi)`, `(hi, lo)`, `(hi, hi)`, so every
-grid point is run four times. With `--start-nudge N` the two balanced corners become `(lo, lo + N)`
-and `(hi - N, hi)`: a group investing exactly equally in both goods can never begin to lean towards
-one (`--start-jitter` doesn't guarantee this, as it can clip a low start back onto the diagonal).
-`--start X1,X2` (repeatable) replaces the four corners with the given start(s) at every grid point,
+grid point is run four times. `--start X1,X2` (repeatable) replaces the four corners with the given start(s) at every grid point,
 e.g. `--start 0.11,0.05`. The starts are added to the file name (`_start-0.11-0.05`) and recorded in
 the results file, so `run_analysis.py --starts` indexes them (0, 1, ... in the order given).
 
@@ -85,32 +80,19 @@ the results file, so `run_analysis.py --starts` indexes them (0, 1, ... in the o
 |---|---|
 | `--flat-benefit` | the benefit rises as before, then stays at its maximum past its peak `Mp = b1'/(2 b2')` instead of falling |
 | `--flat-cost` | the cost stays at its maximum past `Mq = 1/2`; no effect while `x_max <= 0.5` |
-| `--benefit individual_sum` | `Mp = M_p(y) + M_p(x)` instead of the pair's totals (as in the reference implementation) |
-
-### Engine options
-
-These change how the dynamics are run; the defaults are the standard method. The non-default
-choices reproduce a reference implementation, for comparison.
-
-| Flag | Choices (default first) | Effect |
-|---|---|---|
-| `--hessian` | `exact`, `silas` | branching test with `jax.hessian`, or the reference's chain-rule Hessian (quadratic without flat options only) |
-| `--split-mode` | `test_repeat`, `forced_once` | split groups whose payoff curves upwards, repeatedly; or split every group once after the first stage and stop after the second |
-| `--stop` | `converged`, `fixed_time` | a stage ends when the run has settled, or after exactly `--fixed-time` time units (default 100) |
-| `--start-jitter` | off, on | one random offset per (start, panel, good), sd 0.01; `--jitter-seed` sets the seed (default 0) |
 
 ### Settings
 
-`--x-max`, `--x-min`, `--max-dt`, `--max-steps`, `--tol`, `--start-nudge`, `--start` and `--x64` override the settings for one
+`--x-max`, `--x-min`, `--max-dt`, `--max-steps`, `--tol`, `--start` and `--x64` override the settings for one
 run. Everything else (time step, chunk size, batch sizes, split and merge distances, …) is in
 `Settings` in `coop/engine.py`. Priority, lowest first: `Settings` defaults → the model's defaults →
 the sweep's → the command line.
 
 ### What it prints and saves
 
-- payoff checks for the model (and Hessian checks with `--hessian silas`)
+- payoff checks for the model
 - a summary: runs finished and capped at `max_steps`, steps used, runs that needed more group slots or
-  were pushed off a saddle (per panel), and groups stuck at `x_max` with an exactly zero gradient
+  were pushed off a saddle (per panel)
 - `results_<tag>.npz`: the final traits and shares of every run plus everything needed to read them.
   The tag is the model (and its options), the sweep, `n`, `x_max`, and any setting changed on the
   command line, e.g. `results_quadratic_flat_b1_b2_n100_xmax0.5.npz`. If the file already exists it
@@ -120,7 +102,7 @@ the sweep's → the command line.
 ## run_analysis.py
 
 ```
-python run_analysis.py [RESULTS.npz] [--scheme S ...] [--invested RULE] [--cut VALUE] [--compare OTHER.npz]
+python run_analysis.py [RESULTS.npz] [--scheme S ...] [--invested RULE] [--relative-to ...] [--hatch ...] [--starts ...]
 ```
 
 With no file it uses the newest `results_*.npz` in the folder.
@@ -136,11 +118,10 @@ With no file it uses the newest `results_*.npz` in the folder.
 | `division_of_labour_index` | scale | 0 to 1: how lopsided individuals are minus how lopsided the population is; 1 = groups specialise in opposite goods |
 | `individual` | scale | 0 to 1: how lopsided individuals are, `sum f_i \|x1_i - x2_i\| / sum f_i t_i`; 0 = everyone invests equally in both goods, 1 = everyone in one good only. Unsigned: it says how specialised individuals are, not in which good. Colour bar "individual specialisation", from "balanced" to "specialised" |
 | `population` | scale | 0 to 1: how lopsided the population is as a whole, `\|sum f_i (x1_i - x2_i)\| / sum f_i t_i`; 0 = the goods are balanced overall. Division of labour (half in each good) gives 0. Colour bar "population bias", from "balanced" to "specialised" |
-| `total_spread` | scale | 0 to 0.5: spread of total investment `t_i = x1_i + x2_i` between groups, `sqrt(sum f_i (t_i - sum f_j t_j)^2)`, divided by twice the mean-investment scale; 0.5 = half invest nothing and half the scale in both goods |
 | `not_converged` | scale | 0 to 1: the fraction of starts that stopped at `max_steps` without converging |
 | `dhk_type` | categories | by structure, not by the half-cap threshold. With each group's total `t_i = x1_i + x2_i` and top = `2 x_max`: `branching` if two groups' totals differ by more than 0.05 top; else, with the share-weighted mean total m, `defection` (m < 0.01 top), `full cooperation` (m > 0.99 top) or `ESS`. `defection \|or\| full cooperation` is the repeller (bistable). Compared with the one-good diagram at p = q = 1 |
 
-`individual`, `population` and `division_of_labour_index` are NaN (light grey) where nobody invests: a share-weighted total `sum f_i t_i` below 1% of twice the scale (this also covers runs sitting near `x_min`). Averages over starts ignore NaN, so a grid point is NaN only if every start is; in `--summary` NaN counts as not met.
+`individual`, `population` and `division_of_labour_index` are NaN (light grey) where nobody invests: a share-weighted total `sum f_i t_i` below 1% of twice the scale (this also covers runs sitting near `x_min`). Averages over starts ignore NaN, so a grid point is NaN only if every start is.
 
 Default: `cc_dc_dd_division` on a (p, q) grid (`p_q`, `p_q_quadratic`, `p_q_near_one`), `cc_dc_dd` otherwise. Several at once: `--scheme cc_dc_dd mean_investment`.
 
@@ -162,41 +143,10 @@ A scale scheme gives one figure, `<scheme>_<tag>.png`, averaged over starts. It 
 | Flag | Effect |
 |---|---|
 | `--invested half_cap` / `absolute` | when a good counts as invested: above `x_max / 2` (quadratic default) or above 0.05 (exp default); adds `_invested-<rule>` to the figure names when not the default |
-| `--cut VALUE` | for the grid column nearest VALUE (e.g. p = 0.7 on the `p_q` sweep): every group as a dot at (grid row value, lean), lean = (x1 − x2)/(x1 + x2), area ~ share, one row of panels per start. Runs no scheme unless `--scheme` is given |
-| `--compare OTHER.npz` | the two files' unfiltered labels side by side with one legend, and where they differ: in total, per panel, and the 5 most common changes. Both files need the same sweep, `n` and starts |
 | `--relative-to NAME=V[,NAME=V]` | scale schemes: each panel minus the panel with these values at the same grid point (after averaging over starts), on a blue-red scale centred on 0; e.g. `p=1,q=1`. A parameter left out keeps each panel's own value. Adds `_rel-p1-q1` to the figure name |
 | `--relative-to-point NAME=V,NAME=V` | scale schemes: each grid point minus the grid point with these grid-parameter values in the same panel (after averaging over starts), e.g. `p=1,q=1` on a (p, q) grid. Both grid parameters are needed, and the grid must have exactly those values (else it stops and lists them). Diverging teal (negative), white (0), orange (positive) scale with symmetric limits; red and blue are kept for the goods. A black cross marks the reference point. Adds `_relpt-p1-q1` to the figure name. Not with `--relative-to` |
 | `--hatch SCHEME:THRESHOLD` | scale schemes: hatch the grid cells where another scale scheme, averaged over starts (NaN ignored), is above THRESHOLD, e.g. `--hatch division_of_labour_index:0.5`: groups specialised in opposite goods. The cells get amber `//` lines with an amber outline along the cell edges, and the legend says "division of labour" (or `<scheme> > <threshold>` for a scheme without a short name). Works with `--relative-to` and `--relative-to-point`. Adds `_hatch-<scheme>` to the figure name |
-| `--summary` | one figure, `summary_<tag>.png`, with a small grid per condition in `SUMMARIES` (`coop/schemes.py`): the panel parameters on the axes, each cell the fraction of that panel's grid points meeting the condition (q = p and q = (p + 1)/2 drawn when the panels are p and q); the same numbers printed as a table. A condition relative to a panel the sweep doesn't have (e.g. p = 1, q = 1 on a (p, q) grid) is skipped with a note. Runs no scheme unless `--scheme` is given |
-| `--starts I [I ...]` | use only the runs from these starts (indices into the results' starts: 0 = (lo, lo + nudge), 1 = (lo, hi), 2 = (hi, lo), 3 = (hi − nudge, hi)) for everything: scales, labels, `--relative-to`, `--summary`, `--cut`, `--compare`. E.g. `--starts 0 3` keeps the two balanced starts, so a lean comes from selection, not from the start. Adds `_starts-0-3` to the figure names; the simulation is unchanged |
-
-The `SUMMARIES` conditions (values averaged over starts first):
-
-| Title | Scheme | Condition |
-|---|---|---|
-| totals changed | `mean_investment` | \|value minus at p = 1, q = 1\| > 0.05 |
-| branched totals | `total_spread` | > 0.1 |
-| single specialists | `population` | > 0.5 |
-| division of labour | `division_of_labour_index` | > 0.5 |
-| balanced | `individual` | < 0.1 |
-
-### Comparing runs
-
-The ablation against the reference implementation (run at `x_max = 2`, as in the reference):
-
-```
-python run_simulation.py --model quadratic --x-max 2
-python run_simulation.py --model quadratic --x-max 2 --benefit individual_sum
-python run_simulation.py --model quadratic --x-max 2 --benefit individual_sum --hessian silas \
-                         --split-mode forced_once --stop fixed_time --start-jitter
-
-python run_analysis.py results_quadratic_b1_b2_n100_xmax2.npz \
-       --compare results_quadratic_benefit-individual_sum_b1_b2_n100_xmax2.npz
-python run_analysis.py results_quadratic_b1_b2_n100_xmax2.npz \
-       --compare results_quadratic_benefit-individual_sum_b1_b2_n100_xmax2_hessian-silas_split_mode-forced_once_stop-fixed_time_start_jitter.npz
-```
-
-The same works for any two runs on the same grid, e.g. with and without `--flat-benefit`.
+| `--starts I [I ...]` | use only the runs from these starts (indices into the results' starts: 0 = (lo, lo), 1 = (lo, hi), 2 = (hi, lo), 3 = (hi, hi)) for everything: scales, labels, `--relative-to`, `--hatch`. E.g. `--starts 0 3` keeps the two balanced starts, so a lean comes from selection, not from the start. Adds `_starts-0-3` to the figure names; the simulation is unchanged |
 
 ## run_trajectories.py
 
@@ -255,8 +205,7 @@ They show their figures with `plt.show()`; on Colab put `%matplotlib inline` bef
 | a model | `coop/models.py` | write a function returning a `Model` (payoff, parameter names, checks, default sweep and settings) and add it to `MODELS`; options are its keyword arguments, listed in `OPTIONS` to get a command-line flag |
 | a sweep | `coop/sweeps.py` | add an entry to `SWEEPS`: two panel parameters with values, two grid parameters with an `Axis`, and which panel parameter runs down the figure |
 | a labelling scheme | `coop/schemes.py` | write a function `(xs, fs, r)` returning a name or number per run and add it to `SCHEMES` |
-| a summary condition | `coop/schemes.py` | add `(title, scheme, relative_to or None, comparison, threshold)` to `SUMMARIES` |
-| reference lines or a prediction | `coop/references.py` | add a branch for the model and grid to `lines` (and `compare`, `cut_lines`) |
+| reference lines or a prediction | `coop/references.py` | add a branch for the model and grid to `lines` (and `compare`) |
 
 ## Layout
 
