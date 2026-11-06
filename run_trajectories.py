@@ -25,10 +25,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from matplotlib.cm import ScalarMappable
-from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
+from matplotlib.colors import Normalize, to_rgb
 from matplotlib.lines import Line2D
 
 from coop import engine, models, plots, sweeps
+from coop.plots import LEAN, lean
 from run_simulation import settings_for
 
 # DHK's ESS point B, converted to the quadratic model; the benefit stays flat past its peak
@@ -65,7 +66,6 @@ DIFF_LIMIT = 0.3                     # figure A: the difference x1 - x2 from -0.
 PLANE_LIMIT = 0.3                    # figure B: x1 and x2 from 0 to 0.3
 ARROW_TIMES = [0.5, 2, 8, 32, 128]   # figure B: arrowheads where each group is at these times
 TOTAL_STYLES = ["-", "--", ":", "-.", (0, (5, 1, 1, 1, 1, 1)), (0, (1, 3))]   # figure A, shared totals
-LEAN = LinearSegmentedColormap.from_list("lean", ["#E24B4A", "#7F77DD", "#378ADD"])   # lean -1, 0, +1
 SPLIT_MARK = dict(marker="D", color="black", markersize=6, linestyle="none", zorder=5)
 GOOD_ALPHA = 0.55                                         # figure C: the goods' lines are translucent
 TIME_AXIS = dict(value="symlog", linthresh=1)             # time from 0: linear up to 1, logarithmic after
@@ -164,12 +164,6 @@ def paths_and_splits(r):
             elif i in current:
                 done.append(current.pop(i))
     return done + list(current.values()), splits
-
-
-def lean(x):
-    # (x1 - x2) / (x1 + x2): -1 all good 2, 0 equal, +1 all good 1
-    total = x[..., 0] + x[..., 1]
-    return np.where(total > 0, (x[..., 0] - x[..., 1]) / np.where(total > 0, total, 1), 0.0)
 
 
 def draw(ax, r, point, colour=None):

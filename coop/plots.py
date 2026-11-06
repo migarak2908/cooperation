@@ -14,6 +14,7 @@ from coop import references
 
 OTHER_COLOUR = "#9e9e9e"
 GOOD_COLOURS = ["#378ADD", "#E24B4A"]   # good 1 blue, good 2 red, in every figure
+LEAN = LinearSegmentedColormap.from_list("lean", ["#E24B4A", "#7F77DD", "#378ADD"])   # lean -1, 0, +1
 # differences from a grid point: teal negative, white 0, orange positive (red and blue mean the goods)
 TEAL_ORANGE = LinearSegmentedColormap.from_list("teal_orange", ["#0F7B7B", "#FFFFFF", "#E07B00"])
 # scale plots: one hue, light (low) to dark (high), away from the goods' red and blue; NaN in grey
@@ -33,6 +34,12 @@ LAYER_LINE_COLOUR = "black"
 LAYERS_CAPTION = ("Overlapping patterns: both kinds of branching. Specialists are fully specialised only where "
                   "x* < 0.25 (above the dashed line); below it they also invest in the second good, so the shade "
                   "is lighter. A few points in the division-of-labour panel have three groups.")
+
+
+def lean(x):
+    # (x1 - x2) / (x1 + x2): -1 all good 2, 0 equal, +1 all good 1
+    total = x[..., 0] + x[..., 1]
+    return np.where(total > 0, (x[..., 0] - x[..., 1]) / np.where(total > 0, total, 1), 0.0)
 
 
 def save(fig, filename, **options):
@@ -217,6 +224,32 @@ def plot_population(history, record_every, x_max, filename, bins=100):
               frameon=False, fontsize=9)
     save(fig, filename, bbox_inches="tight")
 
+
+
+def population_video(history, record_every, x_max, filename, fps=25):
+    # history: (record, individual, trait), from generation 0. One frame per record: every individual
+    # as a small translucent dot in the (x1, x2) plane, coloured by lean, so dense clusters look solid
+    from matplotlib.animation import FuncAnimation
+    from matplotlib.cm import ScalarMappable
+    fig, ax = plt.subplots(figsize=(6.2, 5.2))
+    ax.set(xlim=(0, x_max), ylim=(0, x_max), aspect="equal")
+    ax.set_xlabel("x1 (good 1)"); ax.set_ylabel("x2 (good 2)")
+    ax.plot([0, x_max], [0, x_max], color="grey", linewidth=0.5, alpha=0.5)
+    dots = ax.scatter(*history[0].T, c=lean(history[0]), cmap=LEAN, vmin=-1, vmax=1, s=3, alpha=0.4, linewidths=0)
+    counter = ax.text(0.97, 0.97, "", transform=ax.transAxes, ha="right", va="top", fontsize=9)
+    bar = fig.colorbar(ScalarMappable(cmap=LEAN, norm=plt.Normalize(-1, 1)), ax=ax, shrink=0.8)
+    bar.set_ticks([-1, 0, 1], labels=["all good 2", "equal", "all good 1"])
+    bar.set_label("lean", fontsize=9)
+    bar.outline.set_visible(False)
+
+    def frame(k):
+        dots.set_offsets(history[k])
+        dots.set_array(lean(history[k]))
+        counter.set_text(f"generation {k * record_every}")
+
+    FuncAnimation(fig, frame, frames=len(history)).save(filename, fps=fps, dpi=120)
+    plt.close(fig)
+    print(f"saved {filename}")
 
 # ---------- layers: total investment, specialisation and branching in one figure ----------
 

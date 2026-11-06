@@ -211,6 +211,8 @@ python run_individual_sim.py
 python run_analysis.py individual_sim.npz      # individual_sim.png
 ```
 
+Add `--video` for `individual_sim.mp4` as well (`--fps`, default 25, records per second; needs ffmpeg, which Colab has): one frame per record, every individual as a small translucent dot in the (x1, x2) plane coloured by lean (red all good 2, purple equal, blue all good 1), with the generation in the corner. Dots aren't followed one by one (a replaced individual's slot goes to its offspring); it shows the cloud moving and splitting. 1,250 records take about 2 minutes to render.
+
 The figure shows, for each trait, the share of the population at each investment against generation: good 1 blue, good 2 red, translucent so they blend to purple where they overlap. Shading is the square root of the share, so small groups still show.
 
 ## One-good scripts

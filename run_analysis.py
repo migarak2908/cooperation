@@ -15,6 +15,7 @@
 #                                                                  specialisation and branching in one figure)
 #         python run_analysis.py individual_sim.npz                (from run_individual_sim.py: the
 #                                                                  population across generations)
+#         python run_analysis.py individual_sim.npz --video        (and an .mp4 of every individual)
 #         in Colab: %run run_analysis.py RESULTS.npz
 
 import argparse
@@ -126,11 +127,15 @@ def hatch_mask(r, hatch):
     return mask, SCHEMES[name].get("short", f"{name} > {threshold:g}")
 
 
-def plot_individual(name):
-    # a file from run_individual_sim.py: each trait's distribution across generations
+def plot_individual(name, video=False, fps=25):
+    # a file from run_individual_sim.py: each trait's distribution across generations, and with video
+    # every individual moving through the (x1, x2) plane
     with np.load(name) as f:
         history = np.concatenate([f["pop0"][None], f["history"]])          # generation 0 first
-        plots.plot_population(history, int(f["record_every"]), float(f["x_max"]), name.replace(".npz", ".png"))
+        record_every, x_max = int(f["record_every"]), float(f["x_max"])
+    plots.plot_population(history, record_every, x_max, name.replace(".npz", ".png"))
+    if video:
+        plots.population_video(history, record_every, x_max, name.replace(".npz", ".mp4"), fps)
 
 
 def analyse_layers(r):
@@ -233,6 +238,9 @@ if __name__ == "__main__":
     parser.add_argument("--layers", action="store_true",
                         help="quadratic b1_b2: total investment, specialisation and branching in one figure, "
                              "from the balanced starts 0 and 3")
+    parser.add_argument("--video", action="store_true",
+                        help="individual_sim.npz: also a video of every individual in the (x1, x2) plane")
+    parser.add_argument("--fps", type=int, default=25, help="--video: frames (records) per second")
     parser.add_argument("--starts", nargs="+", type=int, metavar="I",
                         help="analyse only the runs from these starts (indices into the results' starts), e.g. 0 3")
     args = parser.parse_args()
@@ -240,7 +248,7 @@ if __name__ == "__main__":
         with np.load(args.results) as f:
             individual_based = "history" in f.files
         if individual_based:
-            plot_individual(args.results)
+            plot_individual(args.results, args.video, args.fps)
             raise SystemExit
 
     r = results.load(args.results)
