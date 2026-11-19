@@ -1,7 +1,8 @@
 # Paper figure: specialisation of individuals (a) and of the population (b) over (p, q), for one
-# (b1', b2') panel of a p_q_near_one results file, with q = p, q = (p + 1)/2 and the predicted
-# division-of-labour wedge. Values are coop.schemes.individual / population, averaged over starts as in
-# run_analysis.py. Saves pq_specialisation_<tag>.pdf/.png next to the results file.
+# (b1', b2') panel of a p_q_near_one results file, with q = p and q = (p + 1)/2; the predicted
+# division-of-labour region is between them for p < 1 (orange lines). Values are
+# coop.schemes.individual / population, averaged over starts as in run_analysis.py.
+# Saves pq_specialisation_<tag>.pdf/.png next to the results file.
 #
 # Usage:  python paper/pq_specialisation.py RESULTS.npz --panel b2=1.5
 #         python paper/pq_specialisation.py RESULTS.npz --panel b2=1.5 --starts 0 3
@@ -11,10 +12,8 @@ import os
 import sys
 
 import numpy as np
-import matplotlib as mpl
 import matplotlib.patheffects as pe
 from matplotlib.colors import LinearSegmentedColormap
-from matplotlib.patches import Polygon
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from style import DOUBLE, letter, plt
@@ -22,7 +21,6 @@ from coop import results, schemes
 from coop.plots import NAN_COLOUR
 from run_analysis import average_over_starts, describe, keep_starts, parse_values
 
-mpl.rcParams["hatch.linewidth"] = 0.5
 SEQ = LinearSegmentedColormap.from_list("seq", ["#f7f5ef", "#c5ddd4", "#7fb3a6", "#4a8f82"])
 SEQ.set_bad(NAN_COLOUR)                                  # NaN: nobody invests
 DOL = "#d9531e"
@@ -55,11 +53,6 @@ def draw(ax, p, q, values, title, s):
     ax.plot(hi, (hi + 1) / 2, color="black", lw=0.8)
     ax.plot(lo, lo, color=DOL, lw=1.1, ls=(0, (4, 2)), path_effects=HALO, zorder=4)
     ax.plot(lo, (lo + 1) / 2, color=DOL, lw=1.1, path_effects=HALO, zorder=4)
-    wedge = Polygon([(x0, x0), (1, 1), (x0, (x0 + 1) / 2)], closed=True, facecolor="none",
-                    edgecolor=DOL, hatch="//////", lw=0, zorder=3)
-    if hasattr(wedge, "set_hatch_linewidth"):
-        wedge.set_hatch_linewidth(0.5)
-    ax.add_patch(wedge)
     ax.annotate("Division of labour", xy=(0.835, 0.895), xytext=(0.81, 1.0), fontsize=7, color=DOL,
                 ha="left", va="bottom", arrowprops=dict(arrowstyle="-", lw=0.6, color=DOL, shrinkA=2, shrinkB=0))
     ax.set_xlim(x0, x1); ax.set_ylim(y0, y1)
