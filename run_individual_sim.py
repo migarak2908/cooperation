@@ -30,8 +30,9 @@ w = (P_y - P_x) / alpha - clip to [0, 1]
 alpha = largest possible payoff difference
 
 offspring replacing x has y as parent with w prob, else has x as parent with 1-w prob
-offspring inherits parental strategy, except each trait mutates with mu prob
-if mutation offspring trait drawn from Gaussian dist with parental trait as mean and small standard dev sigma
+offspring inherits parental strategy, except with mu prob both traits mutate in one event:
+steps sigma*z1 and sigma*(rho*z1 + sqrt(1-rho^2)*z2), z1, z2 standard normal
+rho > 0: more variation in total investment, rho < 0: more in allocation between the goods
 """
 
 
@@ -49,7 +50,7 @@ def other(key, N, not_this):
     return k + (k >= not_this)
 
 
-def main_sim(key, alpha, sigma, mu, pop0, prm, x_max, n_records, record_every, update_fraction):
+def main_sim(key, alpha, sigma, mu, pop0, prm, x_max, n_records, record_every, update_fraction, rho=0.0):
     # the population every record_every generations: (n_records, N, TRAITS)
     N = pop0.shape[0]
     batch = max(1, round(update_fraction * N))
@@ -68,8 +69,11 @@ def main_sim(key, alpha, sigma, mu, pop0, prm, x_max, n_records, record_every, u
         w = jnp.clip((Py - Px) / alpha, 0.0, 1.0)
         copy = jax.random.uniform(k4, (batch,)) < w
         child = jnp.where(copy[:, None], pop[pi], pop[i])
-        mutate = jax.random.uniform(k5, (batch, TRAITS)) < mu
-        child = jnp.clip(child + mutate * sigma * jax.random.normal(k6, (batch, TRAITS)), 0, x_max)
+        # with prob mu both goods mutate in one event, sd sigma each, correlation rho
+        mutate = jax.random.uniform(k5, (batch,)) < mu
+        z = jax.random.normal(k6, (batch, TRAITS))
+        dx = sigma * jnp.stack([z[:, 0], rho * z[:, 0] + jnp.sqrt(1 - rho**2) * z[:, 1]], axis=1)
+        child = jnp.clip(child + mutate[:, None] * dx, 0, x_max)
         pop = pop.at[i].set(child)
 
         return (pop, key), None
@@ -98,20 +102,23 @@ if __name__ == "__main__":
     ap.add_argument("--start", type=float, nargs=2, default=START, metavar=("X1", "X2"))
     ap.add_argument("--mutation-prob", type=float, default=MUTATION_PROB)
     ap.add_argument("--mutation-std", type=float, default=MUTATION_STD)
+    ap.add_argument("--rho", type=float, default=0.0, help="correlation of the two goods' mutation steps")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="individual_sim.npz")
     args = ap.parse_args()
+    if not -1 <= args.rho <= 1:
+        raise SystemExit(f"--rho must be between -1 and 1, got {args.rho:g}")
     prm = {name: getattr(args, name) for name in ("b1", "b2", "p", "q")}
 
     key = jax.random.key(args.seed)
     pop0 = jnp.tile(jnp.array(args.start, jnp.float32), (POP_SIZE, 1))
     alpha = payoff_range(prm, X_MAX)
     print("running on:", jax.devices())
-    print("params:", prm)
+    print("params:", prm, "rho:", args.rho)
     print(f"alpha = {alpha:.4f}")
 
     history = main_sim(key, alpha, args.mutation_std, args.mutation_prob, pop0, prm, X_MAX,
-                       args.generations // RECORD_EVERY, RECORD_EVERY, UPDATE_FRACTION)
+                       args.generations // RECORD_EVERY, RECORD_EVERY, UPDATE_FRACTION, args.rho)
     np.savez(args.out, history=np.asarray(history), pop0=np.asarray(pop0), alpha=alpha,
-             record_every=RECORD_EVERY, update_fraction=UPDATE_FRACTION, x_max=X_MAX, **prm)
+             record_every=RECORD_EVERY, update_fraction=UPDATE_FRACTION, x_max=X_MAX, rho=args.rho, **prm)
     print(f"saved {args.out}\nnext: python run_analysis.py {args.out}")
