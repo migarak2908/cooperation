@@ -201,7 +201,7 @@ python run_trajectories.py [--start X1,X2] [--total shared|strips] [--plane-star
 
 ## run_individual_sim.py
 
-An individual-based version: a population of `POP_SIZE` individuals, each with two traits (its investment in each good), all starting at `START` = (0.1, 0.4). Each generation every individual is replaced once: it copies a randomly chosen other individual with probability w = (P_y − P_x)/α, clipped to [0, 1], where each payoff comes from one interaction with a random partner (never itself), and α is the payoff range. With probability `MUTATION_PROB` the offspring mutates, both traits in one event: steps σ z1 and σ (ρ z1 + √(1−ρ²) z2), with σ = `MUTATION_STD` and z1, z2 standard normal, so each trait gets sd σ and the two steps have correlation ρ (`--rho`, default 0). Variance along total investment x1 + x2 is 2σ²(1+ρ), along allocation x1 − x2 it is 2σ²(1−ρ): ρ > 0 favours changes in total, ρ < 0 in allocation. Near 0 and `X_MAX` clipping distorts the ratio. The payoff is the quadratic model with the flat benefit, b1' = 7/4.6, b2' = 1.5. Settings are at the top of the script.
+An individual-based version: a population of `POP_SIZE` individuals, each with two traits (its investment in each good), all starting at `START` = (0.1, 0.4). Each generation every individual is replaced once: it copies a randomly chosen other individual with probability w = (P_y − P_x)/α, clipped to [0, 1], where each payoff comes from one interaction with a random partner (never itself), and α is the payoff range. With probability `MUTATION_PROB` (per individual) the offspring mutates, both traits in one event: steps σ z1 and σ (ρ z1 + √(1−ρ²) z2), with σ = `MUTATION_STD` and z1, z2 standard normal, so each trait gets sd σ and the two steps have correlation ρ (`--rho`, default 0). Variance along total investment x1 + x2 is 2σ²(1+ρ), along allocation x1 − x2 it is 2σ²(1−ρ): ρ > 0 favours changes in total, ρ < 0 in allocation. Near 0 and `X_MAX` clipping distorts the ratio. The payoff is the quadratic model with the flat benefit, b1' = 7/4.6, b2' = 1.5. Settings are at the top of the script.
 
 - `UPDATE_FRACTION`: the share of the population updated at once, all reading the population as it was before the batch; `1 / POP_SIZE` is one at a time, `1` all at once. Larger batches run faster.
 - `RECORD_EVERY`: the population is saved every this many generations, to `individual_sim.npz`.
@@ -211,11 +211,19 @@ python run_individual_sim.py
 python run_analysis.py individual_sim.npz      # individual_sim.png
 ```
 
-Flags override the settings at the top (defaults in brackets): `--b1`, `--b2`, `--p`, `--q` (7/4.6, 1.5, 0.98, 0.984), `--generations` (125,000), `--start X1 X2` (0.1 0.4), `--mutation-prob` (0.01), `--mutation-std` (0.005), `--rho` (0), `--seed` (0), `--out` (`individual_sim.npz`). E.g.
+Flags override the settings at the top (defaults in brackets): `--b1`, `--b2`, `--p`, `--q` (7/4.6, 1.5, 0.98, 0.984), `--generations` (`GENERATIONS`), `--start X1 X2` (0.1 0.4), `--mutation-prob` (0.01), `--mutation-std` (0.005), `--rho` (0), `--pop-size` (10,000), `--record-every` (100), `--update-fraction` (0.01; the batch must divide the population), `--seed` (0), `--out` (`individual_sim.npz`). E.g.
 
 ```
 python run_individual_sim.py --b1 1.1 --b2 0.8 --p 0.5 --q 0.6 --out sim_b1-1.1.npz
 ```
+
+For batch experiments:
+
+- `--start-sd SD`, `--start-rho R` (0, 0): start each individual at `--start` plus normal deviations of sd SD in each good with correlation R (as the mutation step), clipped to [0, `X_MAX`]. The deviations use their own key, so the run's other draws are unchanged.
+- `--record summary` (default `full`): instead of the whole population, save per record `mean_u`, `mean_v`, `var_u`, `var_v`, `cov_uv` (u = (x1 + x2)/√2 total, v = (x1 − x2)/√2 allocation), `n_zero` and `n_max` (individuals at 0 and at `X_MAX`, per good), and `hist_u`, `hist_v` (50-bin counts, 16-bit, so `--pop-size` at most 65,535; edges `u_edges`, `v_edges` cover every possible value). About 220 kB per replicate for 125,000 generations with `--record-every 500`.
+- `--replicates R` (1): R independent runs in parallel (`jax.vmap`); every array gets a leading replicate axis when R > 1. Replicate 0 uses the seed's key itself, so it matches a single run. With `--record full` the script warns above 1 GB of history and refuses above 4 GB.
+
+The file always has `pop0` and `final` (the last population, in full) and every setting. `run_analysis.py` reads only single-replicate `--record full` files; it can't read summary files or files with several replicates.
 
 Add `--video` for `individual_sim.mp4` as well (`--fps`, default 25, records per second; needs ffmpeg, which Colab has): one frame per record, every individual as a small translucent dot in the (x1, x2) plane coloured by lean (red all good 2, purple equal, blue all good 1), with the generation in the corner. Dots aren't followed one by one (a replaced individual's slot goes to its offspring); it shows the cloud moving and splitting. 1,250 records take about 2 minutes to render.
 
